@@ -1,5 +1,5 @@
 import numpy as np
-import scipy
+from scipy.linalg import expm
 
 
 """
@@ -21,18 +21,7 @@ Expectation value calculator
 Plot function of expval
 """
 
-N=7
-d=2
-chi=15
 
-h=0.7
-J=1
-
-Sp = np.array([[0,1],[0,0]])
-Sm = np.array([[0,0],[1,0]])
-Sx = np.array([[0,1], [1,0]])
-Sy = np.array([[0,-1j], [1j,0]])
-Sz = np.array([[1,0],[0,-1]])
 
 class MPS:
     def __init__(self, N, d, chi):
@@ -83,6 +72,17 @@ class MPS:
         self.locsize = np.minimum(self.d**arr, self.chi)
         return
     
+    def initialize_upstate(self):
+        """ Initializes the MPS into a product state of up states """
+        self.A_mat[:,0,0,0] = 1
+        self.Lambda_mat[:,0] = 1
+        self.Gamma_mat[:,0,0,0] = 1
+        
+        arr = np.arange(0,self.N+1)
+        arr = np.minimum(arr, self.N-arr)
+        arr = np.minimum(arr,self.chi)               # For large L, d**arr returns negative values, this line prohibits this effect
+        self.locsize = np.minimum(self.d**arr, self.chi)
+        return
     
     def give_A(self):
         return self.A_mat
@@ -100,7 +100,9 @@ class MPS:
             theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(2,0)) #(chi, d, chi)
             theta = np.tensordot(theta, self.Gamma_mat[i+1,:,:,:],axes=(2,1)) #(chi, d, d, chi)
             theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+2,:]), axes=(3,0)) #(chi, d, d, chi)
+            print(np.shape(theta))
             theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3]))  #(chi, chi, d, d)
+            print(np.shape(theta_prime))
             theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d * self.chi,self.d * self.chi)) # danger!
             
             X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
@@ -119,7 +121,7 @@ class MPS:
             inv_lambdas = self.Lambda_mat[i+2, :self.locsize[i+2]]
             inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
             tmp_gamma = np.tensordot(Z[:, :self.locsize[i+1], :self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0))
-            self.Gamma_mat[i+1, :, :self.locsize[i+1], :self.locsize[i+2]] = tmp_gamma   
+            self.Gamma_mat[i+1, :, :self.locsize[i+1], :self.locsize[i+2]] = tmp_gamma      
         return
     
     def construct_superket(self):
@@ -129,29 +131,27 @@ class MPS:
             self.sup_A_mat[i,:,:,:] = np.tensordot(self.A_mat[i], A_hermitian[i], axes=0)
         return
   
-    """
     def apply_MPO_locsize(self, MPO_L, MPO_M, MPO_R):
         #MPO's must be in shape (d, d', 1, w1, w2) for kronecker product and einsum to work
         MPO_size = np.shape(MPO_L)[-1]        
         
-        A_L = self.A_mat[0,:, :self.locsize[0,0], :self.locsize[0,1]]
+        A_L = self.A_mat[0,:, :self.locsize[0], :self.locsize[1]]
         A_L = np.kron(MPO_L, A_L)
-        self.locsize[0,:] = np.multiply(self.locsize[0], np.array([1,MPO_size])) 
-        self.A_mat[0,:, :self.locsize[0,0], :self.locsize[0,1]] = np.einsum('aiibc', A_L)
+        #self.locsize[0,:] = np.multiply(self.locsize[0], np.array([1,MPO_size])) 
+        self.A_mat[0,:, :self.locsize[0], :self.locsize[1]] = np.einsum('aiibc', A_L)
         
         for i in range(1, self.N-1):
-            A_i = self.A_mat[i,:, :self.locsize[i,0], :self.locsize[i,1]]
+            A_i = self.A_mat[i,:, :self.locsize[i], :self.locsize[i+1]]
             A_i = np.kron(MPO_M, A_i)
-            self.locsize[i,:] *= MPO_size 
-            self.A_mat[i,:, :self.locsize[i,0], :self.locsize[i,1]] = np.einsum('aiibc', A_i)
+            #self.locsize[i,:] *= MPO_size 
+            self.A_mat[i,:, :self.locsize[i], :self.locsize[i+1]] = np.einsum('aiibc', A_i)
             
-        A_R = self.A_mat[self.N-1,:, :self.locsize[self.N-1,0], :self.locsize[self.N-1,1]]
+        A_R = self.A_mat[self.N-1,:, :self.locsize[self.N-1], :self.locsize[self.N]]
         A_R = np.kron(MPO_R, A_R)
-        self.locsize[self.N-1] = np.multiply(self.locsize[self.N-1], np.array([MPO_size,1]))
-        self.A_mat[self.N-1,:, :self.locsize[self.N-1,0], :self.locsize[self.N-1,1]] = np.einsum('aiibc', A_R)
+        #self.locsize[self.N-1] = np.multiply(self.locsize[self.N-1], np.array([MPO_size,1]))
+        self.A_mat[self.N-1,:, :self.locsize[self.N-1], :self.locsize[self.N]] = np.einsum('aiibc', A_R)
         #self.locsize *= MPO_size
         return
-    """
     
     def expval(self, Op, singlesite, site):
         if singlesite:  #calculate expval for a single site
@@ -162,14 +162,24 @@ class MPS:
  
         result = 0      #calculate expval for entire chain
         for i in range(self.N):
-            print(i)
-            theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,0))
-            theta = np.tensordot(theta, np.diag(self.Lambda_mat[i+1,:]), axes=(1,0))    
-            theta_prime = np.tensordot(theta, Op, axes=(1,1)) 
+            theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,1)) #(chi, d, chi)
+            theta = np.tensordot(theta, np.diag(self.Lambda_mat[i+1,:]), axes=(2,0)) #(chi, d, chi)    
+            theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d)
             result += np.tensordot(np.conj(theta_prime), theta, axes=([0,1,2],[0,2,1]))
         return result
     
+    def calculate_vidal_inner_product(self, MPS2):
+        m_total = np.eye(self.chi)
+        temp_lambdas, temp_gammas = MPS2.give_LG()
+        for i in range(0,self.N):
+            st1 = np.tensordot(self.Gamma_mat[i,:,:,:], np.diag(self.Lambda_mat[i,:]), axes=(2,0)) #(d, chi, chi)
+            st2 = np.tensordot(temp_gammas[i,:,:,:], np.diag(temp_lambdas[i,:]), axes=(2,0)) #(d, chi, chi)
+            mp = np.tensordot(np.conj(st1), st2, axes=(0,0))
+            m_total = np.tensordot(m_total, mp, axes=([0,1],[0,2]))
+        return m_total[0,0] 
+    
 ########################################################################################  
+
 
 
 def calculate_inner_product(A1, A2):
@@ -185,7 +195,7 @@ def calculate_inner_product(A1, A2):
         temp = np.einsum('ibj, idj -> bd', temp, A2[i])
         #temp = np.tensordot(np.conj(A1[i]), temp, axes=(1,1))      #here first axis is 1 instead of 2 due to the transpose
         #temp = np.tensordot(temp, A2[i], axes=([0,2],[0,1]))
-    return temp[0,0]
+    return abs(temp[0,0])
 
 
 
@@ -219,18 +229,16 @@ def Create_Ham(h, N, d):
     H_arr[0,:,:,:,:] = np.reshape(H_L, (d,d,d,d))
     H_arr[N-2,:,:,:,:] = np.reshape(H_R, (d,d,d,d)) #N-2 since array length N-1 has last index N-2, and last operator acts on sites N-1 and N
     """
-    
     return H_arr
 
 def Create_TimeOp(H, delta, N, d):
     #H = np.reshape(H, (N-1, d**2, d**2))
     U = np.ones((N-1, d**2, d**2), dtype=complex)
     
-    #U[0,:,:] = scipy.linalg.expm(-1j*delta*H[0])
-    #U[N-2,:,:] = scipy.linalg.expm(-1j*delta*H[N-2])
-    #U[1:N-2,:,:] *= scipy.linalg.exp(-1j*delta*H[1]) #H from sites 2 and 3 - we use broadcasting
+    U[0,:,:] = expm(-1j*delta*H[0])
+    U[N-2,:,:] = expm(-1j*delta*H[N-2])
+    U[1:N-2,:,:] *= expm(-1j*delta*H[1]) #H from sites 2 and 3 - we use broadcasting
     return np.reshape(U, (N-1,d,d,d,d))
-
 
 
 def Create_Ham_MPO(J, h):
@@ -249,6 +257,25 @@ def Create_Ham_MPO(J, h):
 
 
 
+####################################################################################
+
+
+N=7
+d=2
+chi=15
+steps = 1
+
+h=0
+J=1
+
+Sp = np.array([[0,1],[0,0]])
+Sm = np.array([[0,0],[1,0]])
+Sx = np.array([[0,1], [1,0]])
+Sy = np.array([[0,-1j], [1j,0]])
+Sz = np.array([[1,0],[0,-1]])
+
+####################################################################################
+
 
 MPS1 = MPS(3,2,3)
 #MPS1.initialize_halfstate()
@@ -258,13 +285,28 @@ MPS2 = MPS(3,2,3)
 #MPS2.initialize_halfstate()
 MPS2.initialize_flipstate()
 
-#H_L, H_M, H_R = Create_Ham_MPO(1, 0)
+H_L, H_M, H_R = Create_Ham_MPO(1, 0)
 
 Ham = Create_Ham(h, N, d)
 TimeOp = Create_TimeOp(Ham, 0.1, N, d)
 
-MPS1.TEBD_purestate(TimeOp)
 
+
+a = MPS1.calculate_vidal_inner_product(MPS2)
+b = MPS1.expval(Sz, False, 0)
+print(a)
+print(b)
+print("hey")
+
+for i in range(steps):
+    MPS1.TEBD_purestate(TimeOp)
+    a = MPS1.calculate_vidal_inner_product(MPS2)
+    b = MPS1.expval(Sz, False, 0)
+    print(i)
+    print(a)
+    print(b)
+
+#MPS1.apply_MPO_locsize(H_L, H_M, H_R)
 
 #a = MPS1.expval(Sz, True, 0)
 #print(a)
