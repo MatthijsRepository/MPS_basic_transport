@@ -149,9 +149,16 @@ class MPS:
             #self.Lambda_mat[i+1,:] = Y[:self.chi]
             
             X = np.reshape(X[:self.d*self.chi,:self.chi], (self.d, self.chi, self.chi))  # danger!
-            #print(X)
+            #print("X")
+            #print(i)
+            #print(X[0])
+            #print(X[1])
+            #inv_lambdas are part of the problem due to numerical errors
             inv_lambdas = self.Lambda_mat[i, :self.locsize[i]]
+            inv_lambdas[inv_lambdas < 10**-5] = 0
+            #print(inv_lambdas)
             inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
+            #print(inv_lambdas)
             tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:, :self.locsize[i], :self.locsize[i+1]], axes=(1,1))
             tmp_gamma = tmp_gamma.transpose(1,0,2) # to ensure shape (d, size1, size2)
             #print(tmp_gamma)
@@ -298,6 +305,7 @@ N=3
 d=2
 chi=4
 steps = 3
+dt = 0.1
 
 h=1
 J=0
@@ -322,7 +330,7 @@ MPS2.initialize_flipstate()
 #H_L, H_M, H_R = Create_Ham_MPO(1, 0)
 
 Ham = Create_Ham(h, J, N, d)
-TimeOp = Create_TimeOp(Ham, 0.01, N, d)
+TimeOp = Create_TimeOp(Ham, dt, N, d)
 
 
 a = MPS1.calculate_vidal_inner_product(MPS2)
