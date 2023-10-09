@@ -93,6 +93,44 @@ class MPS:
     def give_locsize(self):
         return self.locsize
     
+    
+    
+    def TEBD_purestate_verliezen(self, TimeOp):
+        gammas = self.Gamma_mat.transpose(0,2,3,1)
+        lambdas = self.Lambda_mat
+        chi = self.chi
+        
+        for i in range(0, self.N-1):
+            theta = np.tensordot(np.diag(lambdas[i,:]), gammas[i,:,:,:], axes=(1,0))  #(chi, chi, d)
+            theta = np.tensordot(theta,np.diag(lambdas[i+1,:]),axes=(1,0)) #(chi, d, chi)
+            theta = np.tensordot(theta, gammas[i+1,:,:,:],axes=(2,0)) #(chi, d, chi, d)
+            theta = np.tensordot(theta,np.diag(lambdas[i+2,:]), axes=(2,0)) #(chi, d, d, chi)
+            theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3])) #(chi,chi,d,d)              # Two-site operator
+            theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(d*chi,d*chi)) #first to (d, chi, d, chi), then (d*chi, d*chi) # danger!
+            print(i)
+            print(theta_prime)
+            #Singular value decomposition
+            X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
+            #truncation
+
+            lambdas[i+1,:] = Y[:chi]*1/np.linalg.norm(Y[:chi])
+
+            X = np.reshape(X[:d*chi,:chi], (d, chi,chi))  # danger!
+            print(X)
+            inv_lambdas = lambdas[i,:self.locsize[i]]**(-1)
+            inv_lambdas[np.isnan(inv_lambdas)]=0
+            tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:,:self.locsize[i],:self.locsize[i+1]],axes=(1,1)) #(chi, d, chi)
+            print(np.transpose(tmp_gamma,(1,0,2)))
+            self.Gamma_mat[i,:,:self.locsize[i],:self.locsize[i+1]] = np.transpose(tmp_gamma,(1,0,2))
+            Z = np.reshape(Z[0:d*chi,:chi],(d,chi,chi))
+            Z = np.transpose(Z,(0,2,1))
+            inv_lambdas = lambdas[i+2,:self.locsize[i+2]]**(-1)
+            inv_lambdas[np.isnan(inv_lambdas)]=0
+            tmp_gamma = np.tensordot(Z[:,:self.locsize[i+1],:self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
+            self.Gamma_mat[i+1,:,:self.locsize[i+1],:self.locsize[i+2]] = tmp_gamma    
+        return
+    
+    
     def TEBD_purestate(self, TimeOp):
         """ Performs a single TEBD sweep over the Lambdas and the Gammas, code is almost identical to that used in the BEP """
         for i in range(0,self.N-1):
@@ -100,20 +138,23 @@ class MPS:
             theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(2,0)) #(chi, d, chi)
             theta = np.tensordot(theta, self.Gamma_mat[i+1,:,:,:],axes=(2,1)) #(chi, d, d, chi)
             theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+2,:]), axes=(3,0)) #(chi, d, d, chi)
-            print(np.shape(theta))
             theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3]))  #(chi, chi, d, d)
-            print(np.shape(theta_prime))
             theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d * self.chi,self.d * self.chi)) # danger!
+            #print(i)
+            #print(theta_prime)
             
             X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
             
-            self.Lambda_mat[i+1,:] = Y[:self.chi]
+            self.Lambda_mat[i+1,:] = Y[:chi]*1/np.linalg.norm(Y[:chi])
+            #self.Lambda_mat[i+1,:] = Y[:self.chi]
             
             X = np.reshape(X[:self.d*self.chi,:self.chi], (self.d, self.chi, self.chi))  # danger!
+            #print(X)
             inv_lambdas = self.Lambda_mat[i, :self.locsize[i]]
             inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
             tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:, :self.locsize[i], :self.locsize[i+1]], axes=(1,1))
             tmp_gamma = tmp_gamma.transpose(1,0,2) # to ensure shape (d, size1, size2)
+            #print(tmp_gamma)
             self.Gamma_mat[i, :, :self.locsize[i], :self.locsize[i+1]] = tmp_gamma
         
             Z = np.reshape(Z[0:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))  # danger!
@@ -199,18 +240,18 @@ def calculate_inner_product(A1, A2):
 
 
 
-def Create_Ham(h, N, d):
+def Create_Ham(h, J, N, d):
     #creates XY model Hamiltonian with magnetic field h in z direction
     
     SX = np.kron(Sx, Sx)
     SY = np.kron(Sy, Sy)
     SZ_L = np.kron(Sz, np.eye(2))
     SZ_R = np.kron(np.eye(2), Sz)
-    SZ_M = 1/2 * (SZ_L + SZ_R)
+    SZ_M = (SZ_L + SZ_R)
     
-    H_L = h*(SZ_L + SZ_R/2) + SX + SY
-    H_R = h*(SZ_L/2 + SZ_R) + SX+ SY
-    H_M = h*SZ_M + SX + SY
+    H_L = h*(SZ_L + SZ_R/2) + J*SX + SY
+    H_R = h*(SZ_L/2 + SZ_R) + J*(SX+ SY)
+    H_M = h*SZ_M/2 + J*(SX + SY)
     
     
     H_arr = np.zeros((N-1, d**2, d**2), dtype=complex)
@@ -238,21 +279,14 @@ def Create_TimeOp(H, delta, N, d):
     U[0,:,:] = expm(-1j*delta*H[0])
     U[N-2,:,:] = expm(-1j*delta*H[N-2])
     U[1:N-2,:,:] *= expm(-1j*delta*H[1]) #H from sites 2 and 3 - we use broadcasting
-    return np.reshape(U, (N-1,d,d,d,d))
+    return np.reshape(U, (N-1,d,d,d,d)) #np.ones((N-1,d,d,d,d)) 
 
 
 def Create_Ham_MPO(J, h):
-    
     # J*Szi*Szi+1 + h*Sz
-    
     H_L = np.array([[-h*Sz], [Sz], [np.eye(2)]]).transpose((2,3,1,0)).reshape((2,2,1,1,3)) #transpose((1,0,2,3))
     H_M = np.array([[np.eye(2), np.zeros((2,2)), np.zeros((2,2))],[Sz, np.zeros((2,2)), np.zeros((2,2))],[-h*Sz, J*Sz, np.eye(2)]]).transpose((2,3,0,1)).reshape((2,2,1,3,3))
     H_R = np.array([np.eye(2), J*Sz, -h*Sz]).transpose((1,2,0)).reshape((2,2,1,3,1))
-    #H_L = np.transpose
-    print(np.shape(H_L))
-    print(np.shape(H_M))
-    print(np.shape(H_R))
-
     return H_L, H_M, H_R
 
 
@@ -260,13 +294,13 @@ def Create_Ham_MPO(J, h):
 ####################################################################################
 
 
-N=7
+N=3
 d=2
-chi=15
-steps = 1
+chi=4
+steps = 3
 
-h=0
-J=1
+h=1
+J=0
 
 Sp = np.array([[0,1],[0,0]])
 Sm = np.array([[0,0],[1,0]])
@@ -277,34 +311,47 @@ Sz = np.array([[1,0],[0,-1]])
 ####################################################################################
 
 
-MPS1 = MPS(3,2,3)
+MPS1 = MPS(N,d,chi)
 #MPS1.initialize_halfstate()
 MPS1.initialize_flipstate()
 
-MPS2 = MPS(3,2,3)
+MPS2 = MPS(N,d,chi)
 #MPS2.initialize_halfstate()
 MPS2.initialize_flipstate()
 
-H_L, H_M, H_R = Create_Ham_MPO(1, 0)
+#H_L, H_M, H_R = Create_Ham_MPO(1, 0)
 
-Ham = Create_Ham(h, N, d)
-TimeOp = Create_TimeOp(Ham, 0.1, N, d)
-
+Ham = Create_Ham(h, J, N, d)
+TimeOp = Create_TimeOp(Ham, 0.01, N, d)
 
 
 a = MPS1.calculate_vidal_inner_product(MPS2)
 b = MPS1.expval(Sz, False, 0)
 print(a)
 print(b)
-print("hey")
+print()
+#print(Ham[1])
+#print(TimeOp[1])
+print()
+lambdas, gammas = MPS1.give_LG()
+print(gammas[1,0])
+print(gammas[1,1])
+print()
 
 for i in range(steps):
+    print(i)
     MPS1.TEBD_purestate(TimeOp)
+    #MPS1.TEBD_purestate_verliezen(TimeOp)
+    
+    lambdas, gammas = MPS1.give_LG()
+    print(gammas[1,0])
+    print(gammas[1,1])
+    
     a = MPS1.calculate_vidal_inner_product(MPS2)
     b = MPS1.expval(Sz, False, 0)
-    print(i)
     print(a)
     print(b)
+    print()
 
 #MPS1.apply_MPO_locsize(H_L, H_M, H_R)
 
