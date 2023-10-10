@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.linalg import expm
+import matplotlib.pyplot as plt
 
 
 """
@@ -99,6 +100,11 @@ class MPS:
         theta = np.tensordot(theta, self.Gamma_mat[i+1,:,:,:],axes=(2,1)) #(chi, d, d, chi)
         theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+2,:]), axes=(3,0)) #(chi, d, d, chi)
         theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3]))  #(chi, chi, d, d)
+        #print(i)
+        #print(theta_prime[:,:,0,0])
+        #print(theta_prime[:,:,0,1])
+        #print(theta_prime[:,:,1,0])
+        #print(theta_prime[:,:,1,1])
         theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d * self.chi,self.d * self.chi)) # danger!
         
         X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
@@ -106,6 +112,7 @@ class MPS:
         #inv_lambdas are part of the problem due to numerical errors, so low values in Y are rounded to 0
         Y[Y < 10**-6] = 0
         self.Lambda_mat[i+1,:] = Y[:chi]*1/np.linalg.norm(Y[:chi])
+        #print(self.Lambda_mat[i+1])
         
         X = np.reshape(X[:self.d*self.chi,:self.chi], (self.d, self.chi, self.chi))  # danger!         
         inv_lambdas = np.ones(self.locsize[i])
@@ -129,9 +136,9 @@ class MPS:
         for i in range(0, self.N-1):
             self.apply_twosite(TimeOp, i)
         """
-        for i in range(1, self.N-1, 2):
-            self.apply_twosite(TimeOp, i)
         for i in range(0, self.N-1, 2):
+            self.apply_twosite(TimeOp, i)
+        for i in range(1, self.N-1, 2):
             self.apply_twosite(TimeOp, i)
         #"""
         return
@@ -299,10 +306,10 @@ def Create_Ham_MPO(J, h):
 ####################################################################################
 
 
-N=8
+N=5
 d=2
-chi=16
-steps = 10
+chi=5
+steps = 100
 dt = 0.01
 
 h=0
@@ -348,6 +355,10 @@ lambdas, gammas = MPS1.give_LG()
 #print(gammas[1,1])
 print()
 
+MPS1_inner = np.zeros(steps)
+MPS2_inner = np.zeros(steps)
+exp_sz = np.zeros(steps)
+
 for i in range(steps):
     #print(i)
     MPS1.TEBD_purestate(TimeOp)
@@ -358,21 +369,29 @@ for i in range(steps):
     #print(gammas[1,0])
     #print(gammas[1,1])
     
-    if (i%1==0 or i==0):
-        a = MPS1.calculate_vidal_inner_product(MPS2)
-        b = MPS1.expval(Sz, False, 0)
-        c = MPS1.calculate_vidal_inner_product(MPS1)
+    MPS2_inner[i] = MPS1.calculate_vidal_inner_product(MPS2)
+    exp_sz[i] = MPS1.expval(Sz, False, 0)
+    MPS1_inner[i] = MPS1.calculate_vidal_inner_product(MPS1)
+    
+    if (i%10==0 or i==0):
         print()
         print(i)
         print("inner initial, <Sz> total, normalization")
-        print(a)
-        print(b)
-        print(c)
+        print(MPS2_inner[i])
+        print(exp_sz[i])
+        print(MPS1_inner[i])
         print("<Sz> site by site")
         #for j in range(0,N):
             #print(np.round(MPS1.expval(Sz, True, j), decimals=4))
             
+plt.plot(MPS1_inner, color="red", label="norm")
+plt.plot(exp_sz, color="blue", label="<Sz>")
+plt.grid()
+plt.legend()
+plt.show()
         
+ 
+    
 
 #MPS1.apply_MPO_locsize(H_L, H_M, H_R)
 
