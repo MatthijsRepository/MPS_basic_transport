@@ -312,8 +312,8 @@ def Create_TimeOp(H, delta, N, d):
     U[0,:,:] = expm(-1j*delta*H[0])
     U[N-2,:,:] = expm(-1j*delta*H[N-2])
     U[1:N-2,:,:] *= expm(-1j*delta*H[1]) #H from sites 2 and 3 - we use broadcasting
-    U = np.around(U, decimals=10)
-    return np.reshape(U, (N-1,d,d,d,d)) #np.ones((N-1,d,d,d,d)) 
+    U = np.around(U, decimals=15)        #Rounding out very low decimals 
+    return np.reshape(U, (N-1,d,d,d,d)) 
 
 
 def Create_Ham_MPO(J, h):
