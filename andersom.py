@@ -125,20 +125,22 @@ class MPS:
         theta = np.tensordot(theta, self.Gamma_mat[i+1,:,:,:],axes=(2,0)) #(chi, d, chi, d)
         theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+2,:]), axes=(2,0)) #(chi, d, d, chi)
         theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3])) #(chi,chi,d,d)              # Two-site operator
-        theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(d*chi,d*chi)) #first to (d, chi, d, chi), then (d*chi, d*chi) # danger!
+        theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d*self.chi, self.d*self.chi)) #first to (d, chi, d, chi), then (d*chi, d*chi) # danger!
         #Singular value decomposition
         X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
         #truncation
         if normalize:
-            self.Lambda_mat[i+1,:] = Y[:chi]*1/np.linalg.norm(Y[:chi])
+            self.Lambda_mat[i+1,:] = Y[:self.chi]*1/np.linalg.norm(Y[:self.chi])
         else:
-            self.Lambda_mat[i+1,:] = Y[:chi]
-        X = np.reshape(X[:d*chi,:chi], (d, chi,chi))  # danger!
+            self.Lambda_mat[i+1,:] = Y[:self.chi]
+        
+        X = np.reshape(X[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))  # danger!
         inv_lambdas = self.Lambda_mat[i,:self.locsize[i]]**(-1)
         inv_lambdas[np.isnan(inv_lambdas)]=0
         tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:,:self.locsize[i],:self.locsize[i+1]],axes=(1,1)) #(chi, d, chi)
         self.Gamma_mat[i,:self.locsize[i],:self.locsize[i+1],:] = np.transpose(tmp_gamma,(0,2,1))
-        Z = np.reshape(Z[0:d*chi,:chi],(d,chi,chi))
+        
+        Z = np.reshape(Z[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))
         Z = np.transpose(Z,(0,2,1))
         inv_lambdas = self.Lambda_mat[i+2,:self.locsize[i+2]]**(-1)
         inv_lambdas[np.isnan(inv_lambdas)]=0
