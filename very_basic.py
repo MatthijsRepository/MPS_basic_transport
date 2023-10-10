@@ -93,49 +93,52 @@ class MPS:
     def give_locsize(self):
         return self.locsize
     
-    
-    
-    def TEBD_purestate_verliezen(self, TimeOp):
-        gammas = self.Gamma_mat.transpose(0,2,3,1)
-        lambdas = self.Lambda_mat
-        chi = self.chi
+    def apply_twosite(self, TimeOp, i):
+        theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,1)) #(chi, d, chi)
+        theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(2,0)) #(chi, d, chi)
+        theta = np.tensordot(theta, self.Gamma_mat[i+1,:,:,:],axes=(2,1)) #(chi, d, d, chi)
+        theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+2,:]), axes=(3,0)) #(chi, d, d, chi)
+        theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3]))  #(chi, chi, d, d)
+        theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d * self.chi,self.d * self.chi)) # danger!
         
-        for i in range(0, self.N-1):
-            theta = np.tensordot(np.diag(lambdas[i,:]), gammas[i,:,:,:], axes=(1,0))  #(chi, chi, d)
-            theta = np.tensordot(theta,np.diag(lambdas[i+1,:]),axes=(1,0)) #(chi, d, chi)
-            theta = np.tensordot(theta, gammas[i+1,:,:,:],axes=(2,0)) #(chi, d, chi, d)
-            theta = np.tensordot(theta,np.diag(lambdas[i+2,:]), axes=(2,0)) #(chi, d, d, chi)
-            theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3])) #(chi,chi,d,d)              # Two-site operator
-            theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(d*chi,d*chi)) #first to (d, chi, d, chi), then (d*chi, d*chi) # danger!
-            print(i)
-            print(theta_prime)
-            #Singular value decomposition
-            X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
-            #truncation
-
-            lambdas[i+1,:] = Y[:chi]*1/np.linalg.norm(Y[:chi])
-
-            X = np.reshape(X[:d*chi,:chi], (d, chi,chi))  # danger!
-            print(X)
-            inv_lambdas = lambdas[i,:self.locsize[i]]**(-1)
-            inv_lambdas[np.isnan(inv_lambdas)]=0
-            tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:,:self.locsize[i],:self.locsize[i+1]],axes=(1,1)) #(chi, d, chi)
-            print(np.transpose(tmp_gamma,(1,0,2)))
-            self.Gamma_mat[i,:,:self.locsize[i],:self.locsize[i+1]] = np.transpose(tmp_gamma,(1,0,2))
-            Z = np.reshape(Z[0:d*chi,:chi],(d,chi,chi))
-            Z = np.transpose(Z,(0,2,1))
-            inv_lambdas = lambdas[i+2,:self.locsize[i+2]]**(-1)
-            inv_lambdas[np.isnan(inv_lambdas)]=0
-            tmp_gamma = np.tensordot(Z[:,:self.locsize[i+1],:self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
-            self.Gamma_mat[i+1,:,:self.locsize[i+1],:self.locsize[i+2]] = tmp_gamma    
+        X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
+        
+        #inv_lambdas are part of the problem due to numerical errors, so low values in Y are rounded to 0
+        Y[Y < 10**-6] = 0
+        self.Lambda_mat[i+1,:] = Y[:chi]*1/np.linalg.norm(Y[:chi])
+        
+        X = np.reshape(X[:self.d*self.chi,:self.chi], (self.d, self.chi, self.chi))  # danger!         
+        inv_lambdas = np.ones(self.locsize[i])
+        inv_lambdas *= self.Lambda_mat[i, :self.locsize[i]]
+        inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
+        tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:, :self.locsize[i], :self.locsize[i+1]], axes=(1,1))
+        tmp_gamma = tmp_gamma.transpose(1,0,2) # to ensure shape (d, size1, size2)
+        self.Gamma_mat[i, :, :self.locsize[i], :self.locsize[i+1]] = tmp_gamma
+    
+        Z = np.reshape(Z[0:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))  # danger!
+        Z = np.transpose(Z,(0,2,1))
+        inv_lambdas = np.ones(self.locsize[i+2])
+        inv_lambdas *= self.Lambda_mat[i, :self.locsize[i+2]]
+        inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
+        tmp_gamma = np.tensordot(Z[:, :self.locsize[i+1], :self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0))
+        self.Gamma_mat[i+1, :, :self.locsize[i+1], :self.locsize[i+2]] = tmp_gamma 
         return
     
-    
     def TEBD_purestate(self, TimeOp):
+        """
+        for i in range(0, self.N-1):
+            self.apply_twosite(TimeOp, i)
+        """
+        for i in range(1, self.N-1, 2):
+            self.apply_twosite(TimeOp, i)
+        for i in range(0, self.N-1, 2):
+            self.apply_twosite(TimeOp, i)
+        #"""
+        return
+    
+    def TEBD_purestate_old(self, TimeOp):
         """ Performs a single TEBD sweep over the Lambdas and the Gammas, code is almost identical to that used in the BEP """
         for i in range(0,self.N-1):
-            print()
-            print(i)
             theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,1)) #(chi, d, chi)
             theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(2,0)) #(chi, d, chi)
             theta = np.tensordot(theta, self.Gamma_mat[i+1,:,:,:],axes=(2,1)) #(chi, d, d, chi)
@@ -145,49 +148,25 @@ class MPS:
             
             X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
             
+            #inv_lambdas are part of the problem due to numerical errors, so low values in Y are rounded to 0
+            Y[Y < 10**-6] = 0
             self.Lambda_mat[i+1,:] = Y[:chi]*1/np.linalg.norm(Y[:chi])
-            #print(np.sum(Y[:chi]))
-            #print(np.linalg.norm(Y[:chi]))
-            #print(self.Lambda_mat[i+1])
-            #print(Y[:chi])
-            #self.Lambda_mat[i+1,:] = Y[:self.chi]
             
-            X = np.reshape(X[:self.d*self.chi,:self.chi], (self.d, self.chi, self.chi))  # danger!
-            #print("X")
-            #print(i)
-            #print(X[0])
-            #print(X[1])
-            
-            #inv_lambdas are part of the problem due to numerical errors
-            self.Lambda_mat[self.Lambda_mat < 10**-5] = 0
-            
+            X = np.reshape(X[:self.d*self.chi,:self.chi], (self.d, self.chi, self.chi))  # danger!         
             inv_lambdas = np.ones(self.locsize[i])
             inv_lambdas *= self.Lambda_mat[i, :self.locsize[i]]
-            #print("AAAA")
-            #print(inv_lambdas)
-
-            #print(inv_lambdas)
             inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
-            #print(inv_lambdas)
-            #print("lambdas")
-            #print(self.Lambda_mat[i, :self.locsize[i]])
             tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:, :self.locsize[i], :self.locsize[i+1]], axes=(1,1))
             tmp_gamma = tmp_gamma.transpose(1,0,2) # to ensure shape (d, size1, size2)
-            #print(tmp_gamma)
             self.Gamma_mat[i, :, :self.locsize[i], :self.locsize[i+1]] = tmp_gamma
         
             Z = np.reshape(Z[0:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))  # danger!
             Z = np.transpose(Z,(0,2,1))
-            
             inv_lambdas = np.ones(self.locsize[i+2])
             inv_lambdas *= self.Lambda_mat[i, :self.locsize[i+2]]
-
             inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
-            #print("Hey")
-            #print(inv_lambdas)
             tmp_gamma = np.tensordot(Z[:, :self.locsize[i+1], :self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0))
             self.Gamma_mat[i+1, :, :self.locsize[i+1], :self.locsize[i+2]] = tmp_gamma 
-            #print(tmp_gamma)
         return
     
     def construct_superket(self):
@@ -224,7 +203,7 @@ class MPS:
             theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
             theta = np.tensordot(theta, np.diag(self.Lambda_mat[site+1,:]), axes=(2,0)) #(chi, d, chi)
             theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d)
-            return np.tensordot(np.conj(theta_prime), theta, axes=([0,1,2],[0,2,1]))
+            return np.real(np.tensordot(np.conj(theta_prime), theta, axes=([0,1,2],[0,2,1])))
  
         result = 0      #calculate expval for entire chain
         for i in range(self.N):
@@ -320,10 +299,10 @@ def Create_Ham_MPO(J, h):
 ####################################################################################
 
 
-N=3
+N=8
 d=2
-chi=6
-steps = 100
+chi=16
+steps = 10
 dt = 0.01
 
 h=0
@@ -380,15 +359,20 @@ for i in range(steps):
     #print(gammas[1,1])
     
     if (i%1==0 or i==0):
-        print(i)
         a = MPS1.calculate_vidal_inner_product(MPS2)
         b = MPS1.expval(Sz, False, 0)
         c = MPS1.calculate_vidal_inner_product(MPS1)
-        print("inner initial, <Sz>, normalization")
+        print()
+        print(i)
+        print("inner initial, <Sz> total, normalization")
         print(a)
         print(b)
         print(c)
-        print()
+        print("<Sz> site by site")
+        #for j in range(0,N):
+            #print(np.round(MPS1.expval(Sz, True, j), decimals=4))
+            
+        
 
 #MPS1.apply_MPO_locsize(H_L, H_M, H_R)
 
