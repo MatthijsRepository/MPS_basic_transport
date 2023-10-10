@@ -135,15 +135,21 @@ class MPS:
             self.Lambda_mat[i+1,:] = Y[:self.chi]
         
         X = np.reshape(X[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))  # danger!
-        inv_lambdas = self.Lambda_mat[i,:self.locsize[i]]**(-1)
-        inv_lambdas[np.isnan(inv_lambdas)]=0
+        #inv_lambdas = self.Lambda_mat[i,:self.locsize[i]]**(-1)
+        #inv_lambdas[np.isnan(inv_lambdas)]=0
+        inv_lambdas = np.ones(self.locsize[i], dtype=complex)
+        inv_lambdas *= self.Lambda_mat[i, :self.locsize[i]]
+        inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
         tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:,:self.locsize[i],:self.locsize[i+1]],axes=(1,1)) #(chi, d, chi)
         self.Gamma_mat[i,:self.locsize[i],:self.locsize[i+1],:] = np.transpose(tmp_gamma,(0,2,1))
         
         Z = np.reshape(Z[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))
         Z = np.transpose(Z,(0,2,1))
-        inv_lambdas = self.Lambda_mat[i+2,:self.locsize[i+2]]**(-1)
-        inv_lambdas[np.isnan(inv_lambdas)]=0
+        #inv_lambdas = self.Lambda_mat[i+2,:self.locsize[i+2]]**(-1)
+        #inv_lambdas[np.isnan(inv_lambdas)]=0
+        inv_lambdas = np.ones(self.locsize[i+2], dtype=complex)
+        inv_lambdas *= self.Lambda_mat[i+2, :self.locsize[i+2]]
+        inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
         tmp_gamma = np.tensordot(Z[:,:self.locsize[i+1],:self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
         self.Gamma_mat[i+1,:self.locsize[i+1],:self.locsize[i+2],:] = np.transpose(tmp_gamma,(1, 2, 0))    
         
