@@ -134,31 +134,14 @@ class MPS:
     def TEBD_purestate(self, TimeOp):
         """ Performs a single TEBD sweep over the Lambdas and the Gammas, code is almost identical to that used in the BEP """
         for i in range(0,self.N-1):
-            #print(i)
-            #print("gammas")
-            #print(self.Gamma_mat[i,0])
-            #print(self.Gamma_mat[i,1])
-            #print("lambdas")
-            #print(self.Lambda_mat[i])
+            print()
+            print(i)
             theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,1)) #(chi, d, chi)
             theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(2,0)) #(chi, d, chi)
             theta = np.tensordot(theta, self.Gamma_mat[i+1,:,:,:],axes=(2,1)) #(chi, d, d, chi)
             theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+2,:]), axes=(3,0)) #(chi, d, d, chi)
-            #print(theta[:,0,0,:])
-            #print(theta[:,0,1,:])
-            #print(theta[:,1,0,:])
-            #print(theta[:,1,1,:])
-            #print("here")
             theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3]))  #(chi, chi, d, d)
-            #print("theta_prime")
-            #print(theta_prime[:,:,0,0])
-            #print(theta_prime[:,:,0,1])
-            #print(theta_prime[:,:,1,0])
-            #print(theta_prime[:,:,1,1])
             theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d * self.chi,self.d * self.chi)) # danger!
-            #print(theta_prime)
-            #print(i)
-            #print(theta_prime)
             
             X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
             
@@ -174,12 +157,20 @@ class MPS:
             #print(i)
             #print(X[0])
             #print(X[1])
+            
             #inv_lambdas are part of the problem due to numerical errors
-            inv_lambdas = self.Lambda_mat[i, :self.locsize[i]]
-            inv_lambdas[inv_lambdas < 10**-5] = 0
+            self.Lambda_mat[self.Lambda_mat < 10**-5] = 0
+            
+            inv_lambdas = np.ones(self.locsize[i])
+            inv_lambdas *= self.Lambda_mat[i, :self.locsize[i]]
+            #print("AAAA")
+            #print(inv_lambdas)
+
             #print(inv_lambdas)
             inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
             #print(inv_lambdas)
+            #print("lambdas")
+            #print(self.Lambda_mat[i, :self.locsize[i]])
             tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:, :self.locsize[i], :self.locsize[i+1]], axes=(1,1))
             tmp_gamma = tmp_gamma.transpose(1,0,2) # to ensure shape (d, size1, size2)
             #print(tmp_gamma)
@@ -187,10 +178,16 @@ class MPS:
         
             Z = np.reshape(Z[0:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))  # danger!
             Z = np.transpose(Z,(0,2,1))
-            inv_lambdas = self.Lambda_mat[i+2, :self.locsize[i+2]]
+            
+            inv_lambdas = np.ones(self.locsize[i+2])
+            inv_lambdas *= self.Lambda_mat[i, :self.locsize[i+2]]
+
             inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
+            #print("Hey")
+            #print(inv_lambdas)
             tmp_gamma = np.tensordot(Z[:, :self.locsize[i+1], :self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0))
-            self.Gamma_mat[i+1, :, :self.locsize[i+1], :self.locsize[i+2]] = tmp_gamma      
+            self.Gamma_mat[i+1, :, :self.locsize[i+1], :self.locsize[i+2]] = tmp_gamma 
+            #print(tmp_gamma)
         return
     
     def construct_superket(self):
@@ -325,8 +322,8 @@ def Create_Ham_MPO(J, h):
 
 N=3
 d=2
-chi=8
-steps = 20
+chi=6
+steps = 100
 dt = 0.01
 
 h=0
