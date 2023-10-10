@@ -134,32 +134,27 @@ class MPS:
     def TEBD_purestate(self, TimeOp):
         """ Performs a single TEBD sweep over the Lambdas and the Gammas, code is almost identical to that used in the BEP """
         for i in range(0,self.N-1):
-            print(i)
-            print("gammas")
-            print(self.Gamma_mat[i,0])
-            print(self.Gamma_mat[i,1])
-            print("lambdas")
-            print(self.Lambda_mat[i])
+            #print(i)
+            #print("gammas")
+            #print(self.Gamma_mat[i,0])
+            #print(self.Gamma_mat[i,1])
+            #print("lambdas")
+            #print(self.Lambda_mat[i])
             theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,1)) #(chi, d, chi)
             theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(2,0)) #(chi, d, chi)
-            #zo te zien goed tot hier, er gebeurd iig niks geks
-            print("theta")
-            #print(theta[:,0,:])
-            #print(theta[:,1,:])
             theta = np.tensordot(theta, self.Gamma_mat[i+1,:,:,:],axes=(2,1)) #(chi, d, d, chi)
-            a = theta
             theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+2,:]), axes=(3,0)) #(chi, d, d, chi)
-            print(theta[:,0,0,:])
-            print(theta[:,0,1,:])
-            print(theta[:,1,0,:])
-            print(theta[:,1,1,:])
-            print("here")
+            #print(theta[:,0,0,:])
+            #print(theta[:,0,1,:])
+            #print(theta[:,1,0,:])
+            #print(theta[:,1,1,:])
+            #print("here")
             theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3]))  #(chi, chi, d, d)
-            print("theta_prime")
-            print(theta_prime[:,:,0,0])
-            print(theta_prime[:,:,0,1])
-            print(theta_prime[:,:,1,0])
-            print(theta_prime[:,:,1,1])
+            #print("theta_prime")
+            #print(theta_prime[:,:,0,0])
+            #print(theta_prime[:,:,0,1])
+            #print(theta_prime[:,:,1,0])
+            #print(theta_prime[:,:,1,1])
             theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d * self.chi,self.d * self.chi)) # danger!
             #print(theta_prime)
             #print(i)
@@ -240,7 +235,7 @@ class MPS:
             theta = np.tensordot(theta, np.diag(self.Lambda_mat[i+1,:]), axes=(2,0)) #(chi, d, chi)    
             theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d)
             result += np.tensordot(np.conj(theta_prime), theta, axes=([0,1,2],[0,2,1]))
-        return result
+        return np.real(result)
     
     def calculate_vidal_inner_product(self, MPS2):
         m_total = np.eye(self.chi)
@@ -250,7 +245,7 @@ class MPS:
             st2 = np.tensordot(temp_gammas[i,:,:,:], np.diag(temp_lambdas[i,:]), axes=(2,0)) #(d, chi, chi)
             mp = np.tensordot(np.conj(st1), st2, axes=(0,0))
             m_total = np.tensordot(m_total, mp, axes=([0,1],[0,2]))
-        return m_total[0,0] 
+        return abs(m_total[0,0])
     
 ########################################################################################  
 
@@ -330,12 +325,12 @@ def Create_Ham_MPO(J, h):
 
 N=3
 d=2
-chi=4
-steps = 1
-dt = 1
+chi=8
+steps = 20
+dt = 0.01
 
-h=1
-J=0
+h=0
+J=1
 
 Sp = np.array([[0,1],[0,0]])
 Sm = np.array([[0,0],[1,0]])
@@ -367,31 +362,36 @@ print(a)
 print(b)
 print()
 #print(Ham[1])
-print(Ham[0])
+#print(Ham[0])
 #print(TimeOp[1])
-print(TimeOp[0])
+#print(TimeOp[0])
 
 lambdas, gammas = MPS1.give_LG()
-print("gammas")
-print(gammas[1,0])
-print(gammas[1,1])
+#print("gammas")
+#print(gammas[1,0])
+#print(gammas[1,1])
 print()
 
 for i in range(steps):
-    print(i)
+    #print(i)
     MPS1.TEBD_purestate(TimeOp)
     #MPS1.TEBD_purestate_verliezen(TimeOp)
     
     lambdas, gammas = MPS1.give_LG()
-    print("gammas")
-    print(gammas[1,0])
-    print(gammas[1,1])
+    #print("gammas")
+    #print(gammas[1,0])
+    #print(gammas[1,1])
     
-    a = MPS1.calculate_vidal_inner_product(MPS2)
-    b = MPS1.expval(Sz, False, 0)
-    print(a)
-    print(b)
-    print()
+    if (i%1==0 or i==0):
+        print(i)
+        a = MPS1.calculate_vidal_inner_product(MPS2)
+        b = MPS1.expval(Sz, False, 0)
+        c = MPS1.calculate_vidal_inner_product(MPS1)
+        print("inner initial, <Sz>, normalization")
+        print(a)
+        print(b)
+        print(c)
+        print()
 
 #MPS1.apply_MPO_locsize(H_L, H_M, H_R)
 
