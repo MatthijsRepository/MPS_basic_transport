@@ -134,18 +134,44 @@ class MPS:
     def TEBD_purestate(self, TimeOp):
         """ Performs a single TEBD sweep over the Lambdas and the Gammas, code is almost identical to that used in the BEP """
         for i in range(0,self.N-1):
+            print(i)
+            print("gammas")
+            print(self.Gamma_mat[i,0])
+            print(self.Gamma_mat[i,1])
+            print("lambdas")
+            print(self.Lambda_mat[i])
             theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,1)) #(chi, d, chi)
             theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(2,0)) #(chi, d, chi)
+            #zo te zien goed tot hier, er gebeurd iig niks geks
+            print("theta")
+            #print(theta[:,0,:])
+            #print(theta[:,1,:])
             theta = np.tensordot(theta, self.Gamma_mat[i+1,:,:,:],axes=(2,1)) #(chi, d, d, chi)
+            a = theta
             theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+2,:]), axes=(3,0)) #(chi, d, d, chi)
+            print(theta[:,0,0,:])
+            print(theta[:,0,1,:])
+            print(theta[:,1,0,:])
+            print(theta[:,1,1,:])
+            print("here")
             theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3]))  #(chi, chi, d, d)
+            print("theta_prime")
+            print(theta_prime[:,:,0,0])
+            print(theta_prime[:,:,0,1])
+            print(theta_prime[:,:,1,0])
+            print(theta_prime[:,:,1,1])
             theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d * self.chi,self.d * self.chi)) # danger!
+            #print(theta_prime)
             #print(i)
             #print(theta_prime)
             
             X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
             
             self.Lambda_mat[i+1,:] = Y[:chi]*1/np.linalg.norm(Y[:chi])
+            #print(np.sum(Y[:chi]))
+            #print(np.linalg.norm(Y[:chi]))
+            #print(self.Lambda_mat[i+1])
+            #print(Y[:chi])
             #self.Lambda_mat[i+1,:] = Y[:self.chi]
             
             X = np.reshape(X[:self.d*self.chi,:self.chi], (self.d, self.chi, self.chi))  # danger!
@@ -256,8 +282,8 @@ def Create_Ham(h, J, N, d):
     SZ_R = np.kron(np.eye(2), Sz)
     SZ_M = (SZ_L + SZ_R)
     
-    H_L = h*(SZ_L + SZ_R/2) + J*SX + SY
-    H_R = h*(SZ_L/2 + SZ_R) + J*(SX+ SY)
+    H_L = h*(SZ_L + SZ_R/2) + J*(SX + SY)
+    H_R = h*(SZ_L/2 + SZ_R) + J*(SX + SY)
     H_M = h*SZ_M/2 + J*(SX + SY)
     
     
@@ -286,6 +312,7 @@ def Create_TimeOp(H, delta, N, d):
     U[0,:,:] = expm(-1j*delta*H[0])
     U[N-2,:,:] = expm(-1j*delta*H[N-2])
     U[1:N-2,:,:] *= expm(-1j*delta*H[1]) #H from sites 2 and 3 - we use broadcasting
+    U = np.around(U, decimals=10)
     return np.reshape(U, (N-1,d,d,d,d)) #np.ones((N-1,d,d,d,d)) 
 
 
@@ -304,8 +331,8 @@ def Create_Ham_MPO(J, h):
 N=3
 d=2
 chi=4
-steps = 3
-dt = 0.1
+steps = 1
+dt = 1
 
 h=1
 J=0
@@ -331,6 +358,7 @@ MPS2.initialize_flipstate()
 
 Ham = Create_Ham(h, J, N, d)
 TimeOp = Create_TimeOp(Ham, dt, N, d)
+#print(TimeOp[1])
 
 
 a = MPS1.calculate_vidal_inner_product(MPS2)
@@ -339,9 +367,12 @@ print(a)
 print(b)
 print()
 #print(Ham[1])
+print(Ham[0])
 #print(TimeOp[1])
-print()
+print(TimeOp[0])
+
 lambdas, gammas = MPS1.give_LG()
+print("gammas")
 print(gammas[1,0])
 print(gammas[1,1])
 print()
@@ -352,6 +383,7 @@ for i in range(steps):
     #MPS1.TEBD_purestate_verliezen(TimeOp)
     
     lambdas, gammas = MPS1.give_LG()
+    print("gammas")
     print(gammas[1,0])
     print(gammas[1,1])
     
