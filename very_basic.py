@@ -1,6 +1,11 @@
+import os
+os.chdir("C:\\Users\\matth\\OneDrive\\Documents\\TUDelft\\MEP\\code\\MPS_basic_transport")
+
 import numpy as np
 from scipy.linalg import expm
 import matplotlib.pyplot as plt
+
+
 
 
 """
@@ -71,7 +76,7 @@ class MPS:
         arr = np.minimum(arr, self.N-arr)
         arr = np.minimum(arr,self.chi)               # For large L, d**arr returns negative values, this line prohibits this effect
         self.locsize = np.minimum(self.d**arr, self.chi)
-        return
+        return 
     
     def initialize_upstate(self):
         """ Initializes the MPS into a product state of up states """
@@ -105,24 +110,28 @@ class MPS:
         #print(theta_prime[:,:,0,1])
         #print(theta_prime[:,:,1,0])
         #print(theta_prime[:,:,1,1])
-        theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d * self.chi,self.d * self.chi)) # danger!
+        theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d*self.chi, self.d*self.chi)) # danger!
         
         X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
         
         #inv_lambdas are part of the problem due to numerical errors, so low values in Y are rounded to 0
-        Y[Y < 10**-6] = 0
-        self.Lambda_mat[i+1,:] = Y[:chi]*1/np.linalg.norm(Y[:chi])
-        #print(self.Lambda_mat[i+1])
+        Y[Y < 10**-10] = 0
+        self.Lambda_mat[i+1,:] = Y[:chi]/np.linalg.norm(Y[:chi])
+        #self.Lambda_mat[i+1, self.Lambda_mat[i+1]<10**-6] = 0        
+        #if (len(Y[Y>10]) >0):
+        #    print("High lambdas encountered")
+        #    print(Y[:chi])
         
-        X = np.reshape(X[:self.d*self.chi,:self.chi], (self.d, self.chi, self.chi))  # danger!         
+
+        X = np.reshape(X[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))  # danger!         
         inv_lambdas = np.ones(self.locsize[i])
         inv_lambdas *= self.Lambda_mat[i, :self.locsize[i]]
         inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
-        tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:, :self.locsize[i], :self.locsize[i+1]], axes=(1,1))
-        tmp_gamma = tmp_gamma.transpose(1,0,2) # to ensure shape (d, size1, size2)
+        tmp_gamma = np.tensordot(np.diag(inv_lambdas), X[:, :self.locsize[i], :self.locsize[i+1]], axes=(1,1))
+        tmp_gamma = tmp_gamma.transpose(1,0,2) # to ensure shape (d, chi, chi)
         self.Gamma_mat[i, :, :self.locsize[i], :self.locsize[i+1]] = tmp_gamma
     
-        Z = np.reshape(Z[0:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))  # danger!
+        Z = np.reshape(Z[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))  # danger!
         Z = np.transpose(Z,(0,2,1))
         inv_lambdas = np.ones(self.locsize[i+2])
         inv_lambdas *= self.Lambda_mat[i, :self.locsize[i+2]]
@@ -140,6 +149,9 @@ class MPS:
             self.apply_twosite(TimeOp, i)
         for i in range(1, self.N-1, 2):
             self.apply_twosite(TimeOp, i)
+        
+        #norm = self.calculate_vidal_inner_product(self)
+        #self.Lambda_mat[1:] = self.Lambda_mat[1:]/(norm**(1/2*self.N))
         #"""
         return
     
@@ -166,7 +178,7 @@ class MPS:
             tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:, :self.locsize[i], :self.locsize[i+1]], axes=(1,1))
             tmp_gamma = tmp_gamma.transpose(1,0,2) # to ensure shape (d, size1, size2)
             self.Gamma_mat[i, :, :self.locsize[i], :self.locsize[i+1]] = tmp_gamma
-        
+            
             Z = np.reshape(Z[0:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))  # danger!
             Z = np.transpose(Z,(0,2,1))
             inv_lambdas = np.ones(self.locsize[i+2])
@@ -218,14 +230,22 @@ class MPS:
             theta = np.tensordot(theta, np.diag(self.Lambda_mat[i+1,:]), axes=(2,0)) #(chi, d, chi)    
             theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d)
             result += np.tensordot(np.conj(theta_prime), theta, axes=([0,1,2],[0,2,1]))
-        return np.real(result)
+        return np.real(result)/self.N
+    
+    def calculate_vidal_norm(self):
+        m_total = np.eye(self.chi)
+        for i in range(0, self.N):
+            st = np.tensordot(self.Gamma_mat[i,:,:,:], np.diag(self.Lambda_mat[i+1,:]), axes=(2,0)) #(d, chi, chi)
+            mp = np.tensordot(np.conj(st), st, axes=(0,0))
+            m_total = np.tensordot(m_total, mp, axes=([0,1],[0,2]))
+        return abs(m_total[0,0])
     
     def calculate_vidal_inner_product(self, MPS2):
         m_total = np.eye(self.chi)
         temp_lambdas, temp_gammas = MPS2.give_LG()
         for i in range(0,self.N):
-            st1 = np.tensordot(self.Gamma_mat[i,:,:,:], np.diag(self.Lambda_mat[i,:]), axes=(2,0)) #(d, chi, chi)
-            st2 = np.tensordot(temp_gammas[i,:,:,:], np.diag(temp_lambdas[i,:]), axes=(2,0)) #(d, chi, chi)
+            st1 = np.tensordot(self.Gamma_mat[i,:,:,:], np.diag(self.Lambda_mat[i+1,:]), axes=(2,0)) #(d, chi, chi)
+            st2 = np.tensordot(temp_gammas[i,:,:,:], np.diag(temp_lambdas[i+1,:]), axes=(2,0)) #(d, chi, chi)
             mp = np.tensordot(np.conj(st1), st2, axes=(0,0))
             m_total = np.tensordot(m_total, mp, axes=([0,1],[0,2]))
         return abs(m_total[0,0])
@@ -248,7 +268,6 @@ def calculate_inner_product(A1, A2):
         #temp = np.tensordot(np.conj(A1[i]), temp, axes=(1,1))      #here first axis is 1 instead of 2 due to the transpose
         #temp = np.tensordot(temp, A2[i], axes=([0,2],[0,1]))
     return abs(temp[0,0])
-
 
 
 def Create_Ham(h, J, N, d):
@@ -308,13 +327,12 @@ def Create_Ham_MPO(J, h):
 
 N=5
 d=2
-chi=5
-steps = 100
+chi=4
+steps = 20
 dt = 0.01
 
 h=0
 J=1
-
 Sp = np.array([[0,1],[0,0]])
 Sm = np.array([[0,0],[1,0]])
 Sx = np.array([[0,1], [1,0]])
@@ -325,8 +343,8 @@ Sz = np.array([[1,0],[0,-1]])
 
 
 MPS1 = MPS(N,d,chi)
-#MPS1.initialize_halfstate()
-MPS1.initialize_flipstate()
+MPS1.initialize_halfstate()
+#MPS1.initialize_flipstate()
 
 MPS2 = MPS(N,d,chi)
 #MPS2.initialize_halfstate()
@@ -359,39 +377,47 @@ MPS1_inner = np.zeros(steps)
 MPS2_inner = np.zeros(steps)
 exp_sz = np.zeros(steps)
 
-for i in range(steps):
-    #print(i)
-    MPS1.TEBD_purestate(TimeOp)
-    #MPS1.TEBD_purestate_verliezen(TimeOp)
-    
-    lambdas, gammas = MPS1.give_LG()
-    #print("gammas")
-    #print(gammas[1,0])
-    #print(gammas[1,1])
-    
-    MPS2_inner[i] = MPS1.calculate_vidal_inner_product(MPS2)
-    exp_sz[i] = MPS1.expval(Sz, False, 0)
-    MPS1_inner[i] = MPS1.calculate_vidal_inner_product(MPS1)
-    
-    if (i%10==0 or i==0):
-        print()
-        print(i)
-        print("inner initial, <Sz> total, normalization")
-        print(MPS2_inner[i])
-        print(exp_sz[i])
-        print(MPS1_inner[i])
-        print("<Sz> site by site")
-        #for j in range(0,N):
-            #print(np.round(MPS1.expval(Sz, True, j), decimals=4))
-            
-plt.plot(MPS1_inner, color="red", label="norm")
-plt.plot(exp_sz, color="blue", label="<Sz>")
-plt.grid()
-plt.legend()
-plt.show()
+
+def main():
+    for i in range(steps):
+        #print(i)
+        MPS1.TEBD_purestate(TimeOp)
+        #MPS1.TEBD_purestate_verliezen(TimeOp)
+        
+        lambdas, gammas = MPS1.give_LG()
+        #print("gammas")
+        #print(gammas[1,0])
+        #print(gammas[1,1])
+        
+        MPS2_inner[i] = MPS1.calculate_vidal_inner_product(MPS2)
+        exp_sz[i] = MPS1.expval(Sz, False, 0)
+        MPS1_inner[i] = MPS1.calculate_vidal_norm() #MPS1.calculate_vidal_inner_product(MPS1)
+        
+        #if MPS1_inner[i]<0.98:
+        #    print(gammas[2,0])
+        #    print(gammas[2,1])
+        
+        if (i%1==0 or i==0):
+            print()
+            print(i)
+            print("inner initial, <Sz> total, normalization")
+            print(MPS2_inner[i])
+            print(exp_sz[i])
+            print(MPS1_inner[i])
+            print("<Sz> site by site")
+            #for j in range(0,N):
+                #print(np.round(MPS1.expval(Sz, True, j), decimals=4))
+        
+      
+    plt.plot(MPS1_inner, color="red", label="norm")
+    plt.plot(exp_sz, color="blue", label="<Sz>")
+    plt.grid()
+    plt.legend()
+    plt.show()
+    return
         
  
-    
+main()  
 
 #MPS1.apply_MPO_locsize(H_L, H_M, H_R)
 
