@@ -101,7 +101,53 @@ class MPS:
         return self.locsize
     
     
-    
+    def apply_twosite_new(self, TimeOp, i):
+        """
+        gammas = np.ones(np.shape(self.Gamma_mat), dtype=complex)
+        gammas[:,:,:,:] = self.Gamma_mat[:,:,:,:]
+        lambdas = np.ones(np.shape(self.Lambda_mat))
+        lambdas[:,:] = self.Lambda_mat[:,:]
+        loc_size = self.locsize
+        normalize=True
+        chi = self.chi
+        d = self.d
+        """
+        #gammas = self.Gamma_mat
+        #lambdas = self.Lambda_mat
+        #loc_size = self.locsize
+        #d = self.d
+        #chi = self.chi
+        normalize=True
+        #"""
+        
+        theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,0))  #(chi, chi, d)
+        theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(1,0)) #(chi, d, chi)
+        theta = np.tensordot(theta, self.Gamma_mat[i+1,:,:,:],axes=(2,0)) #(chi, d, chi, d)
+        theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+2,:]), axes=(2,0)) #(chi, d, d, chi)
+        theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3])) #(chi,chi,d,d)              # Two-site operator
+        theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(d*chi,d*chi)) #first to (d, chi, d, chi), then (d*chi, d*chi) # danger!
+        #Singular value decomposition
+        X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
+        #truncation
+        if normalize:
+            self.Lambda_mat[i+1,:] = Y[:chi]*1/np.linalg.norm(Y[:chi])
+        else:
+            self.Lambda_mat[i+1,:] = Y[:chi]
+        X = np.reshape(X[:d*chi,:chi], (d, chi,chi))  # danger!
+        inv_lambdas = self.Lambda_mat[i,:self.locsize[i]]**(-1)
+        inv_lambdas[np.isnan(inv_lambdas)]=0
+        tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:,:self.locsize[i],:self.locsize[i+1]],axes=(1,1)) #(chi, d, chi)
+        self.Gamma_mat[i,:self.locsize[i],:self.locsize[i+1],:] = np.transpose(tmp_gamma,(0,2,1))
+        Z = np.reshape(Z[0:d*chi,:chi],(d,chi,chi))
+        Z = np.transpose(Z,(0,2,1))
+        inv_lambdas = self.Lambda_mat[i+2,:self.locsize[i+2]]**(-1)
+        inv_lambdas[np.isnan(inv_lambdas)]=0
+        tmp_gamma = np.tensordot(Z[:,:self.locsize[i+1],:self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
+        self.Gamma_mat[i+1,:self.locsize[i+1],:self.locsize[i+2],:] = np.transpose(tmp_gamma,(1, 2, 0))    
+        
+        #self.Gamma_mat = gammas
+        #self.Lambda_mat = lambdas
+        return 
     
     def apply_twosite(self, TimeOp, i):
         """
@@ -409,8 +455,11 @@ MPS1.initialize_flipstate()
 Ham = Create_Ham(h, J, N, d)
 
 
+"""
+IMPORTANT NOTE: the additional reshaping steps are indeed redundant
+"""
 
-
+"""
 H_arr = np.ones((N-1,d,d,d,d), dtype=complex)
 H_arr[0,:,:,:] = np.reshape(Ham[0],(d,d,d,d))
 H_arr[N-2,:,:,:] = np.reshape(Ham[N-2], (d,d,d,d))
@@ -419,9 +468,6 @@ H_arr[1:N-2,:,:,:] *= np.reshape(Ham[1], (d,d,d,d))
 O_arr = np.zeros((N-1,d,d,d,d), dtype=complex)
 
 def operator_Create(H,dt,d): 
-    """
-    Returns the operator in the correct shape.
-    """
     H_top=np.eye(H.shape[0])-1j*dt*H/2
     H_bot=np.eye(H.shape[0])+1j*dt*H/2
     Hop = np.linalg.inv(H_bot).dot(H_top)
@@ -432,24 +478,26 @@ for i in range(0,N-1):
 
 TimeOp = O_arr
 
-"""
-IMPORTANT NOTE: the additional reshaping steps are indeed redundant
-"""
 #print(O_arr[1])
 #print(operator_Create(Ham[1], dt, d))
+"""
 
-#TimeOp = Create_TimeOp(Ham, dt, N, d)
-#print(TimeOp[1])
-"""DO NOT DElETE ABOVE SECTION"""
+
+
+
+
+
+TimeOp = Create_TimeOp(Ham, dt, N, d)
+
 
 norm = np.zeros(steps)
 exp_sz = np.zeros((N,steps))
 
 for t in range(steps):
     for i in range(0, N-1, 2):
-        MPS1.apply_twosite(TimeOp, i)
+        MPS1.apply_twosite_new(TimeOp, i)
     for i in range(1, N-1, 2):
-        MPS1.apply_twosite(TimeOp, i)
+        MPS1.apply_twosite_new(TimeOp, i)
         
     norm[t] = MPS1.calculate_vidal_norm()
     #exp_sz[t] = MPS1.expval(Sz, False, 0)
