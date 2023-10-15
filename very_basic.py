@@ -99,17 +99,47 @@ class MPS:
     def give_locsize(self):
         return self.locsize
     
+    
+    def apply_twosite_less_fancy(self, TimeOp, i):
+        gammas = self.Gamma_mat.transpose(0,2,3,1)
+        lambdas = np.ones((self.N+1, self.chi),dtype=complex)
+        lambdas *= self.Lambda_mat
+        theta = np.tensordot(np.diag(lambdas[i,:]), gammas[i,:,:,:], axes=(1,0))  #(chi, chi, d)
+        theta = np.tensordot(theta,np.diag(lambdas[i+1,:]),axes=(1,0)) #(chi, d, chi)
+        theta = np.tensordot(theta, gammas[i+1,:,:,:],axes=(2,0)) #(chi, d, chi, d)
+        theta = np.tensordot(theta,np.diag(lambdas[i+2,:]), axes=(2,0)) #(chi, d, d, chi)
+        theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3])) #(chi,chi,d,d)              # Two-site operator
+        theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(d*chi,d*chi)) #first to (d, chi, d, chi), then (d*chi, d*chi) # danger!
+        
+        X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
+        
+        #truncation
+        normalize=True
+        if normalize:
+            self.Lambda_mat[i+1,:] = Y[:self.chi]*1/np.linalg.norm(Y[:self.chi])
+        else:
+            self.Lambda_mat[i+1,:] = Y[:chi]
+        
+        X = np.reshape(X[:d*chi,:chi], (d, chi,chi))  # danger!
+        inv_lambdas = self.Lambda_mat[i,:self.locsize[i]]**(-1)
+        inv_lambdas[np.isnan(inv_lambdas)]=0
+        tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:,:self.locsize[i],:self.locsize[i+1]],axes=(1,1)) #(chi, d, chi)
+        self.Gamma_mat[i,:,:self.locsize[i],:self.locsize[i+1]] = np.transpose(tmp_gamma,(1,0,2))
+        
+        Z = np.reshape(Z[0:d*chi,:chi],(d,chi,chi))
+        Z = np.transpose(Z,(0,2,1))
+        inv_lambdas = self.Lambda_mat[i+2,:self.locsize[i+2]]**(-1)
+        inv_lambdas[np.isnan(inv_lambdas)]=0
+        tmp_gamma = np.tensordot(Z[:,:self.locsize[i+1],:self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
+        self.Gamma_mat[i+1,:,:self.locsize[i+1],:self.locsize[i+2]] = np.transpose(tmp_gamma,(0, 1, 2)) 
+        return
+    
     def apply_twosite(self, TimeOp, i):
         theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,1)) #(chi, d, chi)
         theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(2,0)) #(chi, d, chi)
         theta = np.tensordot(theta, self.Gamma_mat[i+1,:,:,:],axes=(2,1)) #(chi, d, d, chi)
         theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+2,:]), axes=(3,0)) #(chi, d, d, chi)
         theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3]))  #(chi, chi, d, d)
-        #print(i)
-        #print(theta_prime[:,:,0,0])
-        #print(theta_prime[:,:,0,1])
-        #print(theta_prime[:,:,1,0])
-        #print(theta_prime[:,:,1,1])
         theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d*self.chi, self.d*self.chi)) # danger!
         
         X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
@@ -117,11 +147,6 @@ class MPS:
         #inv_lambdas are part of the problem due to numerical errors, so low values in Y are rounded to 0
         Y[Y < 10**-10] = 0
         self.Lambda_mat[i+1,:] = Y[:chi]/np.linalg.norm(Y[:chi])
-        #self.Lambda_mat[i+1, self.Lambda_mat[i+1]<10**-6] = 0        
-        #if (len(Y[Y>10]) >0):
-        #    print("High lambdas encountered")
-        #    print(Y[:chi])
-        
 
         X = np.reshape(X[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))  # danger!         
         inv_lambdas = np.ones(self.locsize[i])
@@ -147,8 +172,10 @@ class MPS:
         """
         for i in range(0, self.N-1, 2):
             self.apply_twosite(TimeOp, i)
+            #self.apply_twosite_less_fancy(TimeOp, i)
         for i in range(1, self.N-1, 2):
             self.apply_twosite(TimeOp, i)
+            #self.apply_twosite_less_fancy(TimeOp, i)
         
         #norm = self.calculate_vidal_inner_product(self)
         #self.Lambda_mat[1:] = self.Lambda_mat[1:]/(norm**(1/2*self.N))
@@ -236,7 +263,7 @@ class MPS:
         m_total = np.eye(self.chi)
         for i in range(0, self.N):
             st = np.tensordot(self.Gamma_mat[i,:,:,:], np.diag(self.Lambda_mat[i+1,:]), axes=(2,0)) #(d, chi, chi)
-            mp = np.tensordot(np.conj(st), st, axes=(0,0))
+            mp = np.tensordot(np.conj(st), st, axes=(0,0)) #(chi, chi, chi, chi)
             m_total = np.tensordot(m_total, mp, axes=([0,1],[0,2]))
         return abs(m_total[0,0])
     
@@ -279,9 +306,9 @@ def Create_Ham(h, J, N, d):
     SZ_R = np.kron(np.eye(2), Sz)
     SZ_M = (SZ_L + SZ_R)
     
-    H_L = h*(SZ_L + SZ_R/2) + J*(SX + SY)
-    H_R = h*(SZ_L/2 + SZ_R) + J*(SX + SY)
-    H_M = h*SZ_M/2 + J*(SX + SY)
+    H_L = -h*(SZ_L + SZ_R/2) - J*(SX + SY)
+    H_R = -h*(SZ_L/2 + SZ_R) - J*(SX + SY)
+    H_M = -h*SZ_M/2 - J*(SX + SY)
     
     
     H_arr = np.zeros((N-1, d**2, d**2), dtype=complex)
@@ -306,12 +333,30 @@ def Create_TimeOp(H, delta, N, d):
     #H = np.reshape(H, (N-1, d**2, d**2))
     U = np.ones((N-1, d**2, d**2), dtype=complex)
     
+    """
+    Hcn0 = create_crank_nicolson(H[0], delta, N, d)
+    HcnM = create_crank_nicolson(H[1], delta, N, d)
+    HcnN = create_crank_nicolson(H[N-2], delta, N, d)
+    
+    U[0,:,:] = Hcn0
+    U[N-2,:,:] = HcnN
+    U[1:N-2,:,:] *= HcnM #H from sites 2 and 3 - we use broadcasting
+    U = np.around(U, decimals=15)        #Rounding out very low decimals 
+    """
+    
     U[0,:,:] = expm(-1j*delta*H[0])
     U[N-2,:,:] = expm(-1j*delta*H[N-2])
     U[1:N-2,:,:] *= expm(-1j*delta*H[1]) #H from sites 2 and 3 - we use broadcasting
+    #"""
+    
     U = np.around(U, decimals=15)        #Rounding out very low decimals 
     return np.reshape(U, (N-1,d,d,d,d)) 
 
+
+def create_crank_nicolson(H, dt, N, d):
+    H_top=np.eye(H.shape[0])-1j*dt*H/2
+    H_bot=np.eye(H.shape[0])+1j*dt*H/2
+    return np.linalg.inv(H_bot).dot(H_top)
 
 def Create_Ham_MPO(J, h):
     # J*Szi*Szi+1 + h*Sz
@@ -327,8 +372,8 @@ def Create_Ham_MPO(J, h):
 
 N=5
 d=2
-chi=4
-steps = 20
+chi=6
+steps = 40
 dt = 0.01
 
 h=0
@@ -343,8 +388,8 @@ Sz = np.array([[1,0],[0,-1]])
 
 
 MPS1 = MPS(N,d,chi)
-MPS1.initialize_halfstate()
-#MPS1.initialize_flipstate()
+#MPS1.initialize_halfstate()
+MPS1.initialize_flipstate()
 
 MPS2 = MPS(N,d,chi)
 #MPS2.initialize_halfstate()
@@ -408,7 +453,7 @@ def main():
             #for j in range(0,N):
                 #print(np.round(MPS1.expval(Sz, True, j), decimals=4))
         
-      
+    print(np.round(gammas[1], decimals=4))
     plt.plot(MPS1_inner, color="red", label="norm")
     plt.plot(exp_sz, color="blue", label="<Sz>")
     plt.grid()

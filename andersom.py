@@ -35,9 +35,9 @@ class MPS:
         self.d = d
         self.chi = chi
         
-        self.A_mat = np.zeros((N,chi,chi,d), dtype=complex)
+        self.A_mat = np.zeros((N,chi,chi,d), dtype=complex) 
         #self.B_mat = np.zeros((N,d,chi,chi), dtype=complex)
-        self.sup_A_mat = np.zeros((N,d**2, chi**2, chi**2), dtype=complex)
+        self.sup_A_mat = np.zeros((N, chi**2, chi**2, d**2), dtype=complex)
         
         self.Lambda_mat = np.zeros((N+1,chi),dtype=complex)
         self.Gamma_mat = np.zeros((N,chi,chi,d), dtype=complex)
@@ -102,23 +102,7 @@ class MPS:
     
     
     def apply_twosite_new(self, TimeOp, i):
-        """
-        gammas = np.ones(np.shape(self.Gamma_mat), dtype=complex)
-        gammas[:,:,:,:] = self.Gamma_mat[:,:,:,:]
-        lambdas = np.ones(np.shape(self.Lambda_mat))
-        lambdas[:,:] = self.Lambda_mat[:,:]
-        loc_size = self.locsize
         normalize=True
-        chi = self.chi
-        d = self.d
-        """
-        #gammas = self.Gamma_mat
-        #lambdas = self.Lambda_mat
-        #loc_size = self.locsize
-        #d = self.d
-        #chi = self.chi
-        normalize=True
-        #"""
         
         theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,0))  #(chi, chi, d)
         theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(1,0)) #(chi, d, chi)
@@ -135,8 +119,6 @@ class MPS:
             self.Lambda_mat[i+1,:] = Y[:self.chi]
         
         X = np.reshape(X[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))  # danger!
-        #inv_lambdas = self.Lambda_mat[i,:self.locsize[i]]**(-1)
-        #inv_lambdas[np.isnan(inv_lambdas)]=0
         inv_lambdas = np.ones(self.locsize[i], dtype=complex)
         inv_lambdas *= self.Lambda_mat[i, :self.locsize[i]]
         inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
@@ -145,16 +127,11 @@ class MPS:
         
         Z = np.reshape(Z[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))
         Z = np.transpose(Z,(0,2,1))
-        #inv_lambdas = self.Lambda_mat[i+2,:self.locsize[i+2]]**(-1)
-        #inv_lambdas[np.isnan(inv_lambdas)]=0
         inv_lambdas = np.ones(self.locsize[i+2], dtype=complex)
         inv_lambdas *= self.Lambda_mat[i+2, :self.locsize[i+2]]
         inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
         tmp_gamma = np.tensordot(Z[:,:self.locsize[i+1],:self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
         self.Gamma_mat[i+1,:self.locsize[i+1],:self.locsize[i+2],:] = np.transpose(tmp_gamma,(1, 2, 0))    
-        
-        #self.Gamma_mat = gammas
-        #self.Lambda_mat = lambdas
         return 
     
     def apply_twosite(self, TimeOp, i):
@@ -284,51 +261,30 @@ class MPS:
         return
     
     def expval(self, Op, singlesite, site):
-        """
-        gammas = np.ones(np.shape(self.Gamma_mat), dtype=complex)
-        gammas[:,:,:,:] = self.Gamma_mat[:,:,:,:]
-        lambdas = np.ones(np.shape(self.Lambda_mat))
-        lambdas[:,:] = self.Lambda_mat[:,:]
-        loc_size = self.locsize   
-        """
-        gammas= self.Gamma_mat
-        lambdas = self.Lambda_mat
-        loc_size = self.locsize
-        
         if singlesite:
-            theta = np.tensordot(np.diag(lambdas[site,:]), gammas[site,:,:,:], axes=(1,0))
-            theta = np.tensordot(theta,np.diag(lambdas[site+1,:]),axes=(1,0))   
+            theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,0))
+            theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(1,0))   
             theta_prime = np.tensordot(theta, Op, axes=(1,1)) 
             result = np.tensordot(np.conj(theta_prime),theta,axes=([0,1,2],[0,2,1]))
             return np.real(result)
  
         result = 0      #calculate expval for entire chain
         for i in range(self.N):
-            theta = np.tensordot(np.diag(lambdas[i,:]), gammas[i,:,:,:], axes=(1,0))
-            theta = np.tensordot(theta,np.diag(lambdas[i+1,:]),axes=(1,0))   
+            theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,0))
+            theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(1,0))   
             theta_prime = np.tensordot(theta, Op, axes=(1,1)) 
             result += np.tensordot(np.conj(theta_prime),theta,axes=([0,1,2],[0,2,1]))
         return np.real(result)/self.N
     
     def calculate_vidal_norm(self):
-        """
-        gammas = np.ones(np.shape(self.Gamma_mat), dtype=complex)
-        gammas[:,:,:,:] = self.Gamma_mat[:,:,:,:]
-        lambdas = np.ones(np.shape(self.Lambda_mat))
-        lambdas[:,:] = self.Lambda_mat[:,:]
-        loc_size = self.locsize
-        """
-        gammas = self.Gamma_mat
-        lambdas = self.Lambda_mat
-        loc_size = self.locsize
-        
         m_total = np.eye(chi)
         for j in range(0, self.N):        
-            sub_tensor = np.tensordot(gammas[j,:,:,:],np.diag(lambdas[j+1,:]), axes=(1,0)) #(chi, d, chi)
+            sub_tensor = np.tensordot(self.Gamma_mat[j,:,:,:],np.diag(self.Lambda_mat[j+1,:]), axes=(1,0)) #(chi, d, chi)
             mp = np.tensordot(np.conj(sub_tensor),sub_tensor,axes = (1,1)) #(chi, chi, chi, chi)
             m_total = np.tensordot(m_total,mp,axes=([0,1],[0,2]))           
         return np.real(m_total[0,0])
-    
+
+"""    
     def calculate_vidal_inner_product(self, MPS2):
         m_total = np.eye(self.chi)
         temp_lambdas, temp_gammas = MPS2.give_LG()
@@ -338,7 +294,7 @@ class MPS:
             mp = np.tensordot(np.conj(st1), st2, axes=(0,0))
             m_total = np.tensordot(m_total, mp, axes=([0,1],[0,2]))
         return abs(m_total[0,0])
-    
+"""   
 ########################################################################################  
 
 
