@@ -14,13 +14,18 @@ class MPS:
         
         self.A_mat = np.zeros((N,d,chi,chi), dtype=complex) 
         #self.B_mat = np.zeros((N,d,chi,chi), dtype=complex)
-        self.sup_A_mat = np.zeros((N, chi**2, chi**2, d**2), dtype=complex)
         
-        self.Lambda_mat = np.zeros((N+1,chi),dtype=complex)
+        self.Lambda_mat = np.zeros((N+1,chi))
         self.Gamma_mat = np.zeros((N,d,chi,chi), dtype=complex)
 
-        self.locsize = np.zeros(N+1, dtype=int)     #locsize tells us which part
+        self.locsize = np.zeros(N+1, dtype=int)     #locsize tells us which slice of the matrices at each site holds relevant information
         self.canonical_site = None
+        
+        self.sup_A_mat = np.zeros((N, d**2, chi**2, chi**2), dtype=complex)
+        self.sup_Gamma_mat = np.zeros((N, d**2, chi**2, chi**2), dtype=complex)
+        self.sup_Lambda_mat =  np.zeros((N+1, chi**2))
+        
+        self.sup_locsize = np.zeros(N+1, dtype=int)
         return
 
     def initialize_halfstate(self):
@@ -83,11 +88,24 @@ class MPS:
         """ Returns the locsize variable """
         return self.locsize
     
+    def construct_superket(self):
+        """ Constructs a superket of the density operator, following D. Jaschke et al. (2018) """
+        for i in range(self.N):
+            self.sup_A_mat[i,:,:,:] = np.tensordot(self.A_mat[i], np.conj(self.A_mat[i]), axes=0)
+        return
+    
+    def construct_vidal_superket(self):
+        for i in range(self.N):
+            self.sup_Gamma_mat[i,:,:,:] = np.kron(self.Gamma_mat[i], np.conj(self.Gamma_mat[i]))
+            self.sup_Lambda_mat[i,:] = np.kron(self.Lambda_mat[i], self.Lambda_mat[i])
+        self.sup_locsize = self.locsize**2
+        return
+    
     def set_Gamma(self, site, matrix):
         """ sets a gamma matrices of a site to a desired matrix  """
         self.Gamma_mat[site,:,:,:] = matrix
-        return
-    
+        return   
+   
     def apply_twosite(self, TimeOp, i, normalize):
         """ Applies a two-site operator to sites i and i+1 """
         #First the matrices lambda-i to lambda-i+2 are contracted
@@ -130,13 +148,6 @@ class MPS:
             self.apply_twosite(TimeOp, i, normalize)
         for i in range(1, self.N-1, 2):
             self.apply_twosite(TimeOp, i, normalize)
-        return
-     
-    def construct_superket(self):
-        """ Constructs a superket of the density operator, following D. Jaschke et al. (2018) """
-        A_hermitian = np.conj(self.A_mat)
-        for i in range(self.N):
-            self.sup_A_mat[i,:,:,:] = np.tensordot(self.A_mat[i], A_hermitian[i], axes=0)
         return
   
     def apply_MPO_locsize(self, MPO_L, MPO_M, MPO_R):
@@ -198,6 +209,73 @@ class MPS:
             mp = np.tensordot(np.conj(st1), st2, axes=(0,0)) #(chi, chi, chi, chi)     
             m_total = np.tensordot(m_total,mp,axes=([0,1],[0,2]))    
         return abs(m_total[0,0])
+    
+    
+    def sup_apply_twosite(self, TimeOp, i, normalize):
+        indices = np.array([], dtype=int)
+        for j in range(0,self.chi):
+            tempo = np.arange(self.chi) + j*self.chi*self.d
+            indices = np.concatenate((indices, tempo))
+        """ Applies a two-site operator to sites i and i+1 """
+        #First the matrices lambda-i to lambda-i+2 are contracted
+        theta = np.tensordot(np.diag(self.sup_Lambda_mat[i,:]), self.sup_Gamma_mat[i,:,:,:], axes=(1,1))  #(chi, chi, d) -> (chi, d, chi)
+        theta = np.tensordot(theta,np.diag(self.sup_Lambda_mat[i+1,:]),axes=(2,0)) #(chi, d, chi) 
+        theta = np.tensordot(theta, self.sup_Gamma_mat[i+1,:,:,:],axes=(2,1)) #(chi, d, chi, d) -> (chi,d,d,chi)
+        theta = np.tensordot(theta,np.diag(self.sup_Lambda_mat[i+2,:]), axes=(3,0)) #(chi, d, d, chi)
+        #operator is applied, tensor is reshaped
+        theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3])) #(chi,chi,d,d)              # Two-site operator
+        theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d**2 * self.chi**2, self.d**2 * self.chi**2)) #first to (d, chi, d, chi), then (d*chi, d*chi) # danger!
+
+        X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
+        print()
+        print(np.shape(X))
+        print(X)
+        print()
+        print(np.shape(Y))
+        print(Y)
+        print()
+        print(np.shape(Z))
+        print(Z.T)
+        if normalize:
+            self.sup_Lambda_mat[i+1,:] = Y[:self.chi**2]*1/np.linalg.norm(Y[:self.chi**2])
+        else:
+            self.sup_Lambda_mat[i+1,:] = Y[:self.chi]
+        
+        #truncation, and multiplication with the inverse lambda matrix of site i, where care is taken to avoid divides by 0
+        X = np.reshape(X[:self.d**2 * self.chi**2, indices], (self.d**2, self.chi**2, self.chi**2))  # danger!
+        inv_lambdas = np.ones(self.sup_locsize[i], dtype=complex)
+        inv_lambdas *= self.sup_Lambda_mat[i, :self.sup_locsize[i]]
+        inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
+        tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:,:self.sup_locsize[i],:self.sup_locsize[i+1]],axes=(1,1)) #(chi, d, chi)
+        self.sup_Gamma_mat[i, :, :self.sup_locsize[i],:self.sup_locsize[i+1]] = np.transpose(tmp_gamma,(1,0,2))
+        
+        #truncation, and multiplication with the inverse lambda matrix of site i+2, where care is taken to avoid divides by 0
+        Z = np.reshape(Z[:self.d**2 * self.chi**2, indices], (self.d**2, self.chi**2, self.chi**2))
+        Z = np.transpose(Z,(0,2,1))
+        inv_lambdas = np.ones(self.sup_locsize[i+2], dtype=complex)
+        inv_lambdas *= self.sup_Lambda_mat[i+2, :self.sup_locsize[i+2]]
+        inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
+        tmp_gamma = np.tensordot(Z[:,:self.sup_locsize[i+1],:self.sup_locsize[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
+        self.sup_Gamma_mat[i+1, :, :self.sup_locsize[i+1],:self.sup_locsize[i+2]] = np.transpose(tmp_gamma,(0, 1, 2))    
+        return 
+    
+    def TEBD_super(self, TimeOp, normalize):
+        """ TEBD algorithm for a pure state """
+        for i in range(0, self.N-1, 2):
+            self.sup_apply_twosite(TimeOp, i, normalize)
+        for i in range(1, self.N-1, 2):
+            self.sup_apply_twosite(TimeOp, i, normalize)
+        return
+    
+    def sup_calculate_vidal_norm(self):
+        """ Calculates the norm of the MPS """
+        m_total = np.eye(chi**2)
+        for j in range(0, self.N):        
+            st = np.tensordot(self.sup_Gamma_mat[j,:,:,:],np.diag(self.sup_Lambda_mat[j+1,:]), axes=(2,0)) #(d, chi, chi)
+            mp = np.tensordot(np.conj(st), st, axes=(0,0)) #(chi, chi, chi, chi)     
+            m_total = np.tensordot(m_total,mp,axes=([0,1],[0,2]))    
+        return np.real(m_total[0,0])
+    
 
 ########################################################################################  
 
@@ -225,7 +303,6 @@ def Create_Ham_MPO(J, h):
 
 def Create_Ham(h, JXY, JZ, N, d):
     #creates XY model Hamiltonian with magnetic field h in z direction
-    
     SX = np.kron(Sx, Sx)
     SY = np.kron(Sy, Sy)
     SZ = np.kron(Sz, Sz)
@@ -245,20 +322,19 @@ def Create_Ham(h, JXY, JZ, N, d):
     H_arr[N-2,:,:] = H_R
     return H_arr
 
-def Create_TimeOp(H, delta, N, d):
+def Create_TimeOp(H, delta, N, d, use_CN):
     #H = np.reshape(H, (N-1, d**2, d**2))
     U = np.ones((N-1, d**2, d**2), dtype=complex)
     
-    """
-    U[0,:,:] = create_crank_nicolson(H[0], delta, N, d)
-    U[1:N-2,:,:] *= create_crank_nicolson(H[1], delta, N, d)
-    U[N-2,:,:] = create_crank_nicolson(H[N-2], delta, N, d) 
-    """    
-    U[0,:,:] = expm(-1j*delta*H[0])
-    U[N-2,:,:] = expm(-1j*delta*H[N-2])
-    U[1:N-2,:,:] *= expm(-1j*delta*H[1]) #H from sites 2 and 3 - we use broadcasting
-    #"""
-    
+    if use_CN:
+        U[0,:,:] = create_crank_nicolson(H[0], delta, N, d)
+        U[N-2,:,:] = create_crank_nicolson(H[N-2], delta, N, d)
+        U[1:N-2,:,:] *= create_crank_nicolson(H[1], delta, N, d) # we use broadcasting
+    else:
+        U[0,:,:] = expm(-1j*delta*H[0])
+        U[N-2,:,:] = expm(-1j*delta*H[N-2])
+        U[1:N-2,:,:] *= expm(-1j*delta*H[1]) # we use broadcasting
+
     U = np.around(U, decimals=15)        #Rounding out very low decimals 
     return np.reshape(U, (N-1,d,d,d,d)) 
 
@@ -275,19 +351,20 @@ def create_crank_nicolson(H, dt, N, d):
 ####################################################################################
 
 #### MPS constants
-N=5
+N=3
 d=2
-chi=10
+chi=2
 
-#### Hamiltonian constants
+#### Hamiltonian variables
 h=0
-JXY=0
-JZ=-1
+JXY=-1
+JZ=0
+use_CN = False #choose if you want to use Crank-Nicolson approximation
 
 #### Simulation variables
-im_steps = 300
+im_steps = 0
 im_dt = -0.01j
-steps=700
+steps=1
 dt = 0.01
 normalize = True
 
@@ -300,15 +377,20 @@ Sz = np.array([[1,0],[0,-1]])
 
 ####################################################################################
 
+"""
+MUST LOOK INTO: continued use of locsize even as entanglement in system grows?
+""" 
 
 
 
 
+
+####################################################################################
 
 MPS1 = MPS(N,d,chi)
 #MPS1.initialize_halfstate()
-#MPS1.initialize_flipstate()
-MPS1.initialize_up_or_down(False)
+MPS1.initialize_flipstate()
+#MPS1.initialize_up_or_down(False)
 
 
 temp = np.zeros((d,chi,chi))
@@ -320,32 +402,37 @@ MPS1.set_Gamma(1, temp)
 Ham = Create_Ham(h, JXY, JZ, N, d)
 
 
-"""
-IMPORTANT NOTE: the additional reshaping steps are indeed redundant
-"""
+""" Ham is of shape (N,d**2,d**2), we want this to go to shape (N, d**4, d**4), so we must be careful how to use tensordot """
+#conj_ham = np.reshape(np.conj(Ham), (N-1,1,d**2,d**2))
+#sup_Ham = np.kron(Ham, conj_ham)[0]
 
-"""
-H_arr = np.ones((N-1,d,d,d,d), dtype=complex)
-H_arr[0,:,:,:] = np.reshape(Ham[0],(d,d,d,d))
-H_arr[N-2,:,:,:] = np.reshape(Ham[N-2], (d,d,d,d))
-H_arr[1:N-2,:,:,:] *= np.reshape(Ham[1], (d,d,d,d))
+#sup_Ham = np.kron(Ham, np.eye(d**2))
 
-O_arr = np.zeros((N-1,d,d,d,d), dtype=complex)
+#sup_TimeOp = Create_TimeOp(sup_Ham, dt, N, d**2, use_CN)
+#print(sup_TimeOp)
 
-def operator_Create(H,dt,d): 
-    H_top=np.eye(H.shape[0])-1j*dt*H/2
-    H_bot=np.eye(H.shape[0])+1j*dt*H/2
-    Hop = np.linalg.inv(H_bot).dot(H_top)
-    return np.reshape(Hop,(d,d,d,d)) 
 
-for i in range(0,N-1):
-    O_arr[i,:,:,:,:] = operator_Create(np.reshape(H_arr[i,:,:,:,:],(d**2,d**2)),dt,d)    
+norm = np.zeros(steps)
+exp_sz = np.zeros((N,steps))
+TimeOp = Create_TimeOp(Ham, dt, N, d, use_CN)
 
-TimeOp = O_arr
+temp = TimeOp.reshape(N-1, d**2,d**2)
 
-#print(O_arr[1])
-#print(operator_Create(Ham[1], dt, d))
-"""
+temp2 = np.conj(temp.transpose(0,2,1))
+temp2 = np.reshape(temp2, (N-1,1,d**2,d**2))
+
+temp = np.kron(temp, temp2)[0]
+sup_TimeOp = np.reshape(temp, (N-1,d**2,d**2,d**2,d**2))
+
+
+
+MPS1.construct_vidal_superket()
+
+MPS1.TEBD_purestate(TimeOp, normalize)
+MPS1.TEBD_super(sup_TimeOp, normalize)
+
+a = MPS1.sup_calculate_vidal_norm()
+print(a)
 
 
 
@@ -367,9 +454,11 @@ def main():
             im_exp_sz[j,t] = MPS1.expval(Sz, True, j)
         
     plt.plot(im_norm)
+    plt.title("Normalization during im time evolution")
     plt.show()
     for j in range(N):
         plt.plot(im_exp_sz[j,:], label=f"spin {j}")
+    plt.title("<Sz> per site during im time evolution")
     plt.legend()
     plt.show()
     
@@ -382,15 +471,17 @@ def main():
             exp_sz[j,t] = MPS1.expval(Sz, True, j)
         
     plt.plot(norm)
+    plt.title("Normalization during time evolution")
     plt.show()
     for j in range(N):
         plt.plot(exp_sz[j,:], label=f"spin {j}")
+    plt.title("<Sz> per site during time evolution")
     plt.legend()
     plt.show()
 
 
 
-main()
+#main()
 
 
 
