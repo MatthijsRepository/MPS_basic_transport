@@ -19,7 +19,7 @@ class MPS:
         self.Lambda_mat = np.zeros((N+1,chi),dtype=complex)
         self.Gamma_mat = np.zeros((N,d,chi,chi), dtype=complex)
 
-        self.locsize = np.zeros(N+1, dtype=int)
+        self.locsize = np.zeros(N+1, dtype=int)     #locsize tells us which part
         self.canonical_site = None
         return
 
@@ -72,19 +72,30 @@ class MPS:
         return
     
     def give_A(self):
+        """ Returns the 'A' matrices of the MPS """
         return self.A_mat
     
     def give_LG(self):
+        """ Returns the Lambda and Gamma matrices of the MPS """
         return self.Lambda_mat, self.Gamma_mat
     
     def give_locsize(self):
+        """ Returns the locsize variable """
         return self.locsize
     
+    def set_Gamma(self, site, matrix):
+        """ sets a gamma matrices of a site to a desired matrix  """
+        self.Gamma_mat[site,:,:,:] = matrix
+        return
+    
     def apply_twosite(self, TimeOp, i, normalize):
+        """ Applies a two-site operator to sites i and i+1 """
+        #First the matrices lambda-i to lambda-i+2 are contracted
         theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,1))  #(chi, chi, d) -> (chi, d, chi)
         theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(2,0)) #(chi, d, chi) 
         theta = np.tensordot(theta, self.Gamma_mat[i+1,:,:,:],axes=(2,1)) #(chi, d, chi, d) -> (chi,d,d,chi)
         theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+2,:]), axes=(3,0)) #(chi, d, d, chi)
+        #operator is applied, tensor is reshaped
         theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3])) #(chi,chi,d,d)              # Two-site operator
         theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d*self.chi, self.d*self.chi)) #first to (d, chi, d, chi), then (d*chi, d*chi) # danger!
 
@@ -95,6 +106,7 @@ class MPS:
         else:
             self.Lambda_mat[i+1,:] = Y[:self.chi]
         
+        #truncation, and multiplication with the inverse lambda matrix of site i, where care is taken to avoid divides by 0
         X = np.reshape(X[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))  # danger!
         inv_lambdas = np.ones(self.locsize[i], dtype=complex)
         inv_lambdas *= self.Lambda_mat[i, :self.locsize[i]]
@@ -102,6 +114,7 @@ class MPS:
         tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:,:self.locsize[i],:self.locsize[i+1]],axes=(1,1)) #(chi, d, chi)
         self.Gamma_mat[i, :, :self.locsize[i],:self.locsize[i+1]] = np.transpose(tmp_gamma,(1,0,2))
         
+        #truncation, and multiplication with the inverse lambda matrix of site i+2, where care is taken to avoid divides by 0
         Z = np.reshape(Z[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))
         Z = np.transpose(Z,(0,2,1))
         inv_lambdas = np.ones(self.locsize[i+2], dtype=complex)
@@ -112,6 +125,7 @@ class MPS:
         return 
      
     def TEBD_purestate(self, TimeOp, normalize):
+        """ TEBD algorithm for a pure state """
         for i in range(0, self.N-1, 2):
             self.apply_twosite(TimeOp, i, normalize)
         for i in range(1, self.N-1, 2):
@@ -126,6 +140,7 @@ class MPS:
         return
   
     def apply_MPO_locsize(self, MPO_L, MPO_M, MPO_R):
+        """ Applies an MPO to the MPS """
         #MPO's must be in shape (d, d', 1, w1, w2) for kronecker product and einsum to work
         MPO_size = np.shape(MPO_L)[-1]        
         
@@ -148,6 +163,7 @@ class MPS:
         return
     
     def expval(self, Op, singlesite, site):
+        """ Calculates the expectation value of an operator Op, either for a single site or the average over the chain """
         if singlesite:
             theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
             theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
@@ -164,6 +180,7 @@ class MPS:
         return np.real(result)/self.N
     
     def calculate_vidal_norm(self):
+        """ Calculates the norm of the MPS """
         m_total = np.eye(chi)
         for j in range(0, self.N):        
             st = np.tensordot(self.Gamma_mat[j,:,:,:],np.diag(self.Lambda_mat[j+1,:]), axes=(2,0)) #(d, chi, chi)
@@ -172,6 +189,7 @@ class MPS:
         return np.real(m_total[0,0])
 
     def calculate_vidal_inner(self, MPS2):
+        """ Calculates the inner product of the MPS with another MPS """
         m_total = np.eye(self.chi)
         temp_lambdas, temp_gammas = MPS2.give_LG()
         for j in range(0, self.N):        
@@ -198,19 +216,26 @@ def calculate_inner_product(A1, A2):
         temp = np.einsum('ibj, idj -> bd', temp, A2[i])
     return abs(temp[0,0])
 
+def Create_Ham_MPO(J, h):
+    # J*Szi*Szi+1 + h*Sz
+    H_L = np.array([[-h*Sz], [Sz], [np.eye(2)]]).transpose((2,3,1,0)).reshape((2,2,1,1,3)) #transpose((1,0,2,3))
+    H_M = np.array([[np.eye(2), np.zeros((2,2)), np.zeros((2,2))],[Sz, np.zeros((2,2)), np.zeros((2,2))],[-h*Sz, J*Sz, np.eye(2)]]).transpose((2,3,0,1)).reshape((2,2,1,3,3))
+    H_R = np.array([np.eye(2), J*Sz, -h*Sz]).transpose((1,2,0)).reshape((2,2,1,3,1))
+    return H_L, H_M, H_R
 
-def Create_Ham(h, J, N, d):
+def Create_Ham(h, JXY, JZ, N, d):
     #creates XY model Hamiltonian with magnetic field h in z direction
     
     SX = np.kron(Sx, Sx)
     SY = np.kron(Sy, Sy)
+    SZ = np.kron(Sz, Sz)
     SZ_L = np.kron(Sz, np.eye(2))
     SZ_R = np.kron(np.eye(2), Sz)
     SZ_M = (SZ_L + SZ_R)
     
-    H_L = h*(SZ_L + SZ_R/2) + J*(SX + SY)
-    H_R = h*(SZ_L/2 + SZ_R) + J*(SX + SY)
-    H_M = h*SZ_M/2 + J*(SX + SY)
+    H_L = h*(SZ_L + SZ_R/2) + JXY*(SX + SY) + JZ*SZ
+    H_R = h*(SZ_L/2 + SZ_R) + JXY*(SX + SY) + JZ*SZ
+    H_M = h*SZ_M/2 + JXY*(SX + SY) + JZ*SZ
     
     H_arr = np.zeros((N-1, d**2, d**2), dtype=complex)
     
@@ -243,28 +268,30 @@ def create_crank_nicolson(H, dt, N, d):
     H_bot=np.eye(H.shape[0])+1j*dt*H/2
     return np.linalg.inv(H_bot).dot(H_top)
 
-def Create_Ham_MPO(J, h):
-    # J*Szi*Szi+1 + h*Sz
-    H_L = np.array([[-h*Sz], [Sz], [np.eye(2)]]).transpose((2,3,1,0)).reshape((2,2,1,1,3)) #transpose((1,0,2,3))
-    H_M = np.array([[np.eye(2), np.zeros((2,2)), np.zeros((2,2))],[Sz, np.zeros((2,2)), np.zeros((2,2))],[-h*Sz, J*Sz, np.eye(2)]]).transpose((2,3,0,1)).reshape((2,2,1,3,3))
-    H_R = np.array([np.eye(2), J*Sz, -h*Sz]).transpose((1,2,0)).reshape((2,2,1,3,1))
-    return H_L, H_M, H_R
+
 
 
 
 ####################################################################################
 
-
+#### MPS constants
 N=5
 d=2
 chi=10
-steps = 700
-dt = 0.01j
+
+#### Hamiltonian constants
+h=0
+JXY=0
+JZ=-1
+
+#### Simulation variables
+im_steps = 300
+im_dt = -0.01j
+steps=700
+dt = 0.01
 normalize = True
 
-h=-2
-J=-0.1
-
+#### Spin matrices
 Sp = np.array([[0,1],[0,0]])
 Sm = np.array([[0,0],[1,0]])
 Sx = np.array([[0,1], [1,0]])
@@ -284,8 +311,13 @@ MPS1 = MPS(N,d,chi)
 MPS1.initialize_up_or_down(False)
 
 
+temp = np.zeros((d,chi,chi))
+temp[0,0,0] = np.sqrt(4/5)
+temp[1,0,0] = 1/np.sqrt(5)
+MPS1.set_Gamma(1, temp)
 
-Ham = Create_Ham(h, J, N, d)
+
+Ham = Create_Ham(h, JXY, JZ, N, d)
 
 
 """
@@ -317,30 +349,48 @@ TimeOp = O_arr
 
 
 
-
-
-
-TimeOp = Create_TimeOp(Ham, dt, N, d)
-
-
-norm = np.zeros(steps)
-exp_sz = np.zeros((N,steps))
-
-for t in range(steps):
-    MPS1.TEBD_purestate(TimeOp, normalize)
-        
-    norm[t] = MPS1.calculate_vidal_inner(MPS1) #MPS1.calculate_vidal_norm()
-    #exp_sz[t] = MPS1.expval(Sz, False, 0)
-    for j in range(N):
-        exp_sz[j,t] = MPS1.expval(Sz, True, j)
+def main():
+    im_TimeOp = Create_TimeOp(Ham, im_dt, N, d)
+    im_norm = np.zeros(im_steps)
+    im_exp_sz = np.zeros((N,im_steps))
     
-plt.plot(norm)
-plt.show()
-for j in range(N):
-    plt.plot(exp_sz[j,:])
-plt.show()
+    norm = np.zeros(steps)
+    exp_sz = np.zeros((N,steps))
+    TimeOp = Create_TimeOp(Ham, dt, N, d)
+    
+    for t in range(im_steps):
+        MPS1.TEBD_purestate(im_TimeOp, normalize)
+            
+        im_norm[t] = MPS1.calculate_vidal_inner(MPS1) #MPS1.calculate_vidal_norm()
+        #exp_sz[t] = MPS1.expval(Sz, False, 0)
+        for j in range(N):
+            im_exp_sz[j,t] = MPS1.expval(Sz, True, j)
+        
+    plt.plot(im_norm)
+    plt.show()
+    for j in range(N):
+        plt.plot(im_exp_sz[j,:], label=f"spin {j}")
+    plt.legend()
+    plt.show()
+    
+    for t in range(steps):
+        MPS1.TEBD_purestate(TimeOp, normalize)
+            
+        norm[t] = MPS1.calculate_vidal_inner(MPS1) #MPS1.calculate_vidal_norm()
+        #exp_sz[t] = MPS1.expval(Sz, False, 0)
+        for j in range(N):
+            exp_sz[j,t] = MPS1.expval(Sz, True, j)
+        
+    plt.plot(norm)
+    plt.show()
+    for j in range(N):
+        plt.plot(exp_sz[j,:], label=f"spin {j}")
+    plt.legend()
+    plt.show()
 
 
+
+main()
 
 
 
