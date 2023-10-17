@@ -204,11 +204,11 @@ class MPS:
  
         result = 0      #calculate expval for entire chain
         for i in range(self.N):
-            theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
-            theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
+            theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,1)) #(chi, d, chi)
+            theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(2,0)) #(chi,d,chi)
             theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d) 
-            result += np.tensordot(np.conj(theta_prime),theta,axes=([0,1,2],[0,2,1]))
-        return np.real(result)/self.N
+            result += np.real(np.tensordot(np.conj(theta_prime),theta,axes=([0,1,2],[0,2,1])))
+        return result/self.N
     
     def calculate_vidal_norm(self):
         """ Calculates the norm of the MPS """
@@ -492,6 +492,7 @@ def main():
     plt.title("DENS <Sz> per site during time evolution")
     plt.legend()
     plt.show()
+    pass
 
 
 
@@ -507,7 +508,16 @@ print(a)
 print(b)
 print(c)
 
+sz_test_s = MPS1.expval(Sz, False, 1)
+sz_test_d1 = DENS1.expval(np.kron(Sz, np.eye(d)), False, 1)
+del(DENS1)
+DENS1 = create_superket(MPS1)
+sz_test_d2 = DENS1.expval(np.kron(Sz, np.eye(d)), False, 1)
 
+print()
+print(sz_test_s)
+print(sz_test_d1)
+print(sz_test_d2)
 
 
 
