@@ -20,12 +20,6 @@ class MPS:
 
         self.locsize = np.zeros(N+1, dtype=int)     #locsize tells us which slice of the matrices at each site holds relevant information
         self.canonical_site = None
-        
-        self.sup_A_mat = np.zeros((N, d**2, chi**2, chi**2), dtype=complex)
-        self.sup_Gamma_mat = np.zeros((N, d**2, chi**2, chi**2), dtype=complex)
-        self.sup_Lambda_mat =  np.zeros((N+1, chi**2))
-        
-        self.sup_locsize = np.zeros(N+1, dtype=int)
         return
 
     def initialize_halfstate(self):
@@ -76,6 +70,18 @@ class MPS:
         self.locsize = np.minimum(self.d**arr, self.chi)
         return
     
+    def set_Gamma_Lambda(self, gammas, lambdas, locsize):
+        """ Custom initialization of the MPS """
+        self.Gamma_mat = gammas
+        self.Lambda_mat = lambdas
+        self.locsize = locsize
+        return
+    
+    def set_Gamma_singlesite(self, site, matrix):
+        """ sets a gamma matrices of a site to a desired matrix  """
+        self.Gamma_mat[site,:,:,:] = matrix
+        return   
+    
     def give_A(self):
         """ Returns the 'A' matrices of the MPS """
         return self.A_mat
@@ -88,23 +94,24 @@ class MPS:
         """ Returns the locsize variable """
         return self.locsize
     
+    
     def construct_superket(self):
         """ Constructs a superket of the density operator, following D. Jaschke et al. (2018) """
+        sup_A_mat = np.zeros((self.N, self.d**2, self.chi**2, self.chi**2), dtype=complex)
         for i in range(self.N):
-            self.sup_A_mat[i,:,:,:] = np.tensordot(self.A_mat[i], np.conj(self.A_mat[i]), axes=0)
-        return
+            sup_A_mat[i,:,:,:] = np.kron(self.A_mat[i], np.conj(self.A_mat[i]))
+        return sup_A_mat, self.locsize**2
     
     def construct_vidal_superket(self):
+        """ Constructs a superket of the density operator in Vidal decomposition """
+        sup_Gamma_mat = np.zeros((self.N, self.d**2, self.chi**2, self.chi**2), dtype=complex)
+        sup_Lambda_mat = np.zeros((self.N, self.chi**2))
         for i in range(self.N):
-            self.sup_Gamma_mat[i,:,:,:] = np.kron(self.Gamma_mat[i], np.conj(self.Gamma_mat[i]))
-            self.sup_Lambda_mat[i,:] = np.kron(self.Lambda_mat[i], self.Lambda_mat[i])
-        self.sup_locsize = self.locsize**2
-        return
+            sup_Gamma_mat[i,:,:,:] = np.kron(self.Gamma_mat[i], np.conj(self.Gamma_mat[i]))
+            sup_Lambda_mat[i,:] = np.kron(self.Lambda_mat[i], self.Lambda_mat[i])
+        sup_Lambda_mat[N,:] = np.kron(self.Lambda_mat[N], self.Lambda_mat[N])
+        return sup_Gamma_mat, sup_Lambda_mat, self.locsize**2
     
-    def set_Gamma(self, site, matrix):
-        """ sets a gamma matrices of a site to a desired matrix  """
-        self.Gamma_mat[site,:,:,:] = matrix
-        return   
    
     def apply_twosite(self, TimeOp, i, normalize):
         """ Applies a two-site operator to sites i and i+1 """
@@ -326,12 +333,12 @@ MPS1 = MPS(N,d,chi)
 #MPS1.initialize_halfstate()
 MPS1.initialize_flipstate()
 #MPS1.initialize_up_or_down(False)
-
+A = MPS1.construct_superket()
 
 temp = np.zeros((d,chi,chi))
 temp[0,0,0] = np.sqrt(4/5)
 temp[1,0,0] = 1/np.sqrt(5)
-#MPS1.set_Gamma(1, temp)
+#MPS1.set_Gamma_singlesite(1, temp)
 
 
 Ham = Create_Ham(h, JXY, JZ, N, d)
