@@ -40,7 +40,7 @@ class MPS:
         """ Returns the 'A' matrices of the MPS """
         return self.A_mat
     
-    def give_LG(self):
+    def give_GL(self):
         """ Returns the Lambda and Gamma matrices of the MPS """
         return self.Gamma_mat, self.Lambda_mat
     
@@ -222,7 +222,7 @@ class MPS:
     def calculate_vidal_inner(self, MPS2):
         """ Calculates the inner product of the MPS with another MPS """
         m_total = np.eye(self.chi)
-        temp_gammas, temp_lambdas = MPS2.give_LG()
+        temp_gammas, temp_lambdas = MPS2.give_GL()
         for j in range(0, self.N):        
             st1 = np.tensordot(self.Gamma_mat[j,:,:,:],np.diag(self.Lambda_mat[j+1,:]), axes=(2,0)) #(d, chi, chi)
             st2 = np.tensordot(temp_gammas[j,:,:,:],np.diag(temp_lambdas[j+1,:]), axes=(2,0)) #(d, chi, chi)
@@ -268,20 +268,39 @@ def Create_Ham(h, JXY, JZ, N, d):
     H_R = h*(SZ_L/2 + SZ_R) + JXY*(SX + SY) + JZ*SZ
     H_M = h*SZ_M/2 + JXY*(SX + SY) + JZ*SZ
     
-    H_arr = np.zeros((N-1, d**2, d**2), dtype=complex)
+    H_arr = np.ones((N-1, d**2, d**2), dtype=complex)
     
-    for i in range(1,N-2):
-        H_arr[i,:,:] = H_M
+    H_arr[1:N-2,:,:] *= H_M
     H_arr[0,:,:] = H_L
     H_arr[N-2,:,:] = H_R
     return H_arr
-
-def Create_Ham_dens(Ham, d):
-    """ Creates effective Hamiltonian for vectorised density matrix """
-    Ham_1 = np.kron(Ham, np.eye(d**2))
-    Ham_2 = np.kron(np.eye(d**2), Ham)
-    return Ham_1 - Ham_2
     
+
+def Create_Dens_Ham(h, JXY, JZ, N, d):
+    Sx_arr = np.array([np.kron(Sx, np.eye(d)) , np.kron(np.eye(d), Sx)])
+    Sy_arr = np.array([np.kron(Sy, np.eye(d)) , np.kron(np.eye(d), Sy)])
+    Sz_arr = np.array([np.kron(Sz, np.eye(d)) , np.kron(np.eye(d), Sz)])
+     
+    H_arr = np.ones((2, N-1, d**4, d**4), dtype=complex)
+    for i in range(2):
+        SX = np.kron(Sx_arr[i], Sx_arr[i])
+        SY = np.kron(Sy_arr[i], Sy_arr[i])
+        SZ = np.kron(Sz_arr[i], Sz_arr[i])
+        SZ_L = np.kron(Sz_arr[i], np.eye(d**2))
+        SZ_R = np.kron(np.eye(d**2), Sz_arr[i])
+        SZ_M = (SZ_L + SZ_R)
+        
+        H_L = h*(SZ_L + SZ_R/2) + JXY*(SX + SY) + JZ*SZ
+        H_R = h*(SZ_L/2 + SZ_R) + JXY*(SX + SY) + JZ*SZ
+        H_M = h*SZ_M/2 + JXY*(SX + SY) + JZ*SZ
+   
+        H_arr[i, 1:N-2,:,:] *= H_M
+        H_arr[i, 0,:,:] = H_L
+        H_arr[i, N-2,:,:] = H_R
+    
+    H_eff = H_arr[0] - H_arr[1]     ######## We do not take the Hermitian conjugate into account, since H is Hermitian this has no effect
+    return H_eff
+
 
 def Create_TimeOp(H, delta, N, d, use_CN):
     #H = np.reshape(H, (N-1, d**2, d**2))
@@ -351,11 +370,11 @@ JZ=0
 use_CN = False #choose if you want to use Crank-Nicolson approximation
 
 #### Simulation variables
-im_steps = 0
+im_steps = 10
 im_dt = -0.01j
 steps=10
 dt = 0.01
-normalize = False
+normalize = True
 
 #### Spin matrices
 Sp = np.array([[0,1],[0,0]])
@@ -377,23 +396,18 @@ MUST LOOK INTO: continued use of locsize even as entanglement in system grows?
 ####################################################################################
 
 Ham = Create_Ham(h, JXY, JZ, N, d)
-Create_Ham_dens(Ham, d)
+dens_Ham = Create_Dens_Ham(h, JXY, JZ, N, d)
 
 MAX_MIXED = create_max_mixed_state()
 
-test = MAX_MIXED.calculate_vidal_inner(MAX_MIXED)
-print(test)
 
 
 
 MPS1 = MPS(1, N,d,chi, False)
+
 #MPS1.initialize_halfstate()
 MPS1.initialize_flipstate()
 #MPS1.initialize_up_or_down(False)
-
-
-
-
 
 temp = np.zeros((d,chi,chi))
 temp[0,0,0] = np.sqrt(4/5)
@@ -401,58 +415,81 @@ temp[1,0,0] = 1/np.sqrt(5)
 #MPS1.set_Gamma_singlesite(1, temp)
 
 
-
-
 DENS1 = create_superket(MPS1)
 
 
 
-a = DENS1.calculate_vidal_inner(DENS1)
-print(a)
-del(DENS1)
-
-
-
 def main():
-    im_TimeOp = Create_TimeOp(Ham, im_dt, N, d, use_CN)
     im_norm = np.zeros(im_steps)
     im_exp_sz = np.zeros((N,im_steps))
-    
+    im_TimeOp = Create_TimeOp(Ham, im_dt, N, d, use_CN)
     norm = np.zeros(steps)
     exp_sz = np.zeros((N,steps))
     TimeOp = Create_TimeOp(Ham, dt, N, d, use_CN)
     
+    im_dens_norm = np.zeros(steps)
+    im_dens_exp_sz = np.zeros((N,steps))
+    im_dens_TimeOp = Create_TimeOp(dens_Ham, im_dt, N, d**2, use_CN)
+    dens_norm = np.zeros(steps)
+    dens_exp_sz = np.zeros((N,steps))
+    dens_TimeOp = Create_TimeOp(dens_Ham, dt, N, d**2, use_CN)
+    
     for t in range(im_steps):
         MPS1.TEBD(im_TimeOp, normalize)
+        DENS1.TEBD(im_dens_TimeOp, normalize)
             
         im_norm[t] = MPS1.calculate_vidal_inner(MPS1) #MPS1.calculate_vidal_norm()
+        im_dens_norm[t] = DENS1.calculate_vidal_inner(DENS1)
         #exp_sz[t] = MPS1.expval(Sz, False, 0)
         for j in range(N):
             im_exp_sz[j,t] = MPS1.expval(Sz, True, j)
+            im_dens_exp_sz[j,t] = DENS1.expval(np.kron(Sz, np.eye(d)), True, j)
         
-    plt.plot(im_norm)
+    plt.plot(im_norm, label="MPS")
+    plt.plot(im_dens_norm, label="DENS")
     plt.title("Normalization during im time evolution")
-    plt.show()
-    for j in range(N):
-        plt.plot(im_exp_sz[j,:], label=f"spin {j}")
-    plt.title("<Sz> per site during im time evolution")
     plt.legend()
     plt.show()
     
+    for j in range(N):
+        plt.plot(im_exp_sz[j,:], label=f"spin {j}")
+    plt.title("MPS <Sz> per site during im time evolution")
+    plt.legend()
+    plt.show()
+    
+    for j in range(N):
+        plt.plot(im_dens_exp_sz[j,:], label=f"spin {j}")
+    plt.title("DENS <Sz> per site during im time evolution")
+    plt.legend()
+    plt.show()
+    
+    
     for t in range(steps):
         MPS1.TEBD(TimeOp, normalize)
+        DENS1.TEBD(dens_TimeOp, normalize)
             
         norm[t] = MPS1.calculate_vidal_inner(MPS1) #MPS1.calculate_vidal_norm()
+        dens_norm[t] = DENS1.calculate_vidal_inner(DENS1)
         #exp_sz[t] = MPS1.expval(Sz, False, 0)
         for j in range(N):
             exp_sz[j,t] = MPS1.expval(Sz, True, j)
-        
-    plt.plot(norm)
+            dens_exp_sz[j,t] = DENS1.expval(np.kron(Sz, np.eye(d)), True, j)
+    
+    plt.plot(norm, label="MPS")
+    plt.plot(dens_norm, label="DENS")
     plt.title("Normalization during time evolution")
+    plt.legend()
     plt.show()
+    
     for j in range(N):
         plt.plot(exp_sz[j,:], label=f"spin {j}")
-    plt.title("<Sz> per site during time evolution")
+    plt.title("MPS <Sz> per site during time evolution")
+    plt.legend()
+    plt.show()
+    
+    for j in range(N):
+        plt.plot(dens_exp_sz[j,:], label=f"spin {j}")
+    plt.title("DENS <Sz> per site during time evolution")
     plt.legend()
     plt.show()
 
