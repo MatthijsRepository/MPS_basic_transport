@@ -42,7 +42,7 @@ class MPS:
     
     def give_LG(self):
         """ Returns the Lambda and Gamma matrices of the MPS """
-        return self.Lambda_mat, self.Gamma_mat
+        return self.Gamma_mat, self.Lambda_mat
     
     def give_locsize(self):
         return self.locsize
@@ -222,7 +222,7 @@ class MPS:
     def calculate_vidal_inner(self, MPS2):
         """ Calculates the inner product of the MPS with another MPS """
         m_total = np.eye(self.chi)
-        temp_lambdas, temp_gammas = MPS2.give_LG()
+        temp_gammas, temp_lambdas = MPS2.give_LG()
         for j in range(0, self.N):        
             st1 = np.tensordot(self.Gamma_mat[j,:,:,:],np.diag(self.Lambda_mat[j+1,:]), axes=(2,0)) #(d, chi, chi)
             st2 = np.tensordot(temp_gammas[j,:,:,:],np.diag(temp_lambdas[j+1,:]), axes=(2,0)) #(d, chi, chi)
