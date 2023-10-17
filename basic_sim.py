@@ -7,10 +7,12 @@ import matplotlib.pyplot as plt
 
 
 class MPS:
-    def __init__(self, N, d, chi):
+    def __init__(self, ID, N, d, chi, is_density):
+        self.ID = ID
         self.N = N
         self.d = d
         self.chi = chi
+        self.is_density = is_density
         
         self.A_mat = np.zeros((N,d,chi,chi), dtype=complex) 
         #self.B_mat = np.zeros((N,d,chi,chi), dtype=complex)
@@ -19,8 +21,31 @@ class MPS:
         self.Gamma_mat = np.zeros((N,d,chi,chi), dtype=complex)
 
         self.locsize = np.zeros(N+1, dtype=int)     #locsize tells us which slice of the matrices at each site holds relevant information
-        self.canonical_site = None
+        #self.canonical_site = None
         return
+    
+    def __str__(self):
+        if self.is_density:
+            return f"Density matrix {self.ID}, {self.N} sites of dimension {self.d}, chi={self.chi}"
+        else:
+            return f"MPS {self.ID}, {self.N} sites of dimension {self.d}, chi={self.chi}"
+    
+    def give_ID(self):
+        return self.ID
+    
+    def give_NDchi(self):
+        return self.N, self.d, self.chi
+    
+    def give_A(self):
+        """ Returns the 'A' matrices of the MPS """
+        return self.A_mat
+    
+    def give_LG(self):
+        """ Returns the Lambda and Gamma matrices of the MPS """
+        return self.Lambda_mat, self.Gamma_mat
+    
+    def give_locsize(self):
+        return self.locsize
 
     def initialize_halfstate(self):
         """ Initializes the MPS into a product state of uniform eigenstates """
@@ -82,18 +107,6 @@ class MPS:
         self.Gamma_mat[site,:,:,:] = matrix
         return   
     
-    def give_A(self):
-        """ Returns the 'A' matrices of the MPS """
-        return self.A_mat
-    
-    def give_LG(self):
-        """ Returns the Lambda and Gamma matrices of the MPS """
-        return self.Lambda_mat, self.Gamma_mat
-    
-    def give_locsize(self):
-        """ Returns the locsize variable """
-        return self.locsize
-    
     
     def construct_superket(self):
         """ Constructs a superket of the density operator, following D. Jaschke et al. (2018) """
@@ -105,7 +118,7 @@ class MPS:
     def construct_vidal_superket(self):
         """ Constructs a superket of the density operator in Vidal decomposition """
         sup_Gamma_mat = np.zeros((self.N, self.d**2, self.chi**2, self.chi**2), dtype=complex)
-        sup_Lambda_mat = np.zeros((self.N, self.chi**2))
+        sup_Lambda_mat = np.zeros((self.N+1, self.chi**2))
         for i in range(self.N):
             sup_Gamma_mat[i,:,:,:] = np.kron(self.Gamma_mat[i], np.conj(self.Gamma_mat[i]))
             sup_Lambda_mat[i,:] = np.kron(self.Lambda_mat[i], self.Lambda_mat[i])
@@ -244,7 +257,6 @@ def Create_Ham_MPO(J, h):
     return H_L, H_M, H_R
 
 def Create_Ham(h, JXY, JZ, N, d):
-    #creates XY model Hamiltonian with magnetic field h in z direction
     SX = np.kron(Sx, Sx)
     SY = np.kron(Sy, Sy)
     SZ = np.kron(Sz, Sz)
@@ -263,6 +275,13 @@ def Create_Ham(h, JXY, JZ, N, d):
     H_arr[0,:,:] = H_L
     H_arr[N-2,:,:] = H_R
     return H_arr
+
+def Create_Ham_dens(Ham, d):
+    """ Creates effective Hamiltonian for vectorised density matrix """
+    Ham_1 = np.kron(Ham, np.eye(d**2))
+    Ham_2 = np.kron(np.eye(d**2), Ham)
+    return Ham_1 - Ham_2
+    
 
 def Create_TimeOp(H, delta, N, d, use_CN):
     #H = np.reshape(H, (N-1, d**2, d**2))
@@ -286,7 +305,35 @@ def create_crank_nicolson(H, dt, N, d):
     H_bot=np.eye(H.shape[0])+1j*dt*H/2
     return np.linalg.inv(H_bot).dot(H_top)
 
+def create_superket(State):
+    """ create MPS of the density matrix of a given MPS """
+    ID = State.give_ID()
+    N, d, chi = State.give_NDchi()
+    gammas, lambdas, locsize = State.construct_vidal_superket()
+    
+    name = "DENS" + str(ID)
+    newDENS = MPS(ID, N, d**2, chi**2, True)
+    newDENS.set_Gamma_Lambda(gammas, lambdas, locsize)
+    globals()[name] = newDENS
+    return newDENS
 
+def create_max_mixed_state():
+    """ Creates vectorised density matrix of the maximally mixed state """
+    lambdas = np.zeros((N+1,chi**2))
+    lambdas[:,0]= 1
+    
+    gammas = np.zeros((N,d**2,chi**2,chi**2), dtype=complex)
+    diagonal = (1+d)*np.arange(d)
+    gammas[:,diagonal, 0, 0] = 1/np.sqrt(d)
+    
+    arr = np.arange(0,N+1)
+    arr = np.minimum(arr, N-arr)
+    arr = np.minimum(arr,chi**2)               # For large L, d**arr returns negative values, this line prohibits this effect
+    locsize = np.minimum((d**2)**arr, chi**2)
+    
+    MAX_MIXED = MPS(0, N, d**2, chi**2, True)
+    MAX_MIXED.set_Gamma_Lambda(gammas, lambdas, locsize)
+    return MAX_MIXED
 
 
 
@@ -308,7 +355,7 @@ im_steps = 0
 im_dt = -0.01j
 steps=10
 dt = 0.01
-normalize = True
+normalize = False
 
 #### Spin matrices
 Sp = np.array([[0,1],[0,0]])
@@ -329,11 +376,24 @@ MUST LOOK INTO: continued use of locsize even as entanglement in system grows?
 
 ####################################################################################
 
-MPS1 = MPS(N,d,chi)
+Ham = Create_Ham(h, JXY, JZ, N, d)
+Create_Ham_dens(Ham, d)
+
+MAX_MIXED = create_max_mixed_state()
+
+test = MAX_MIXED.calculate_vidal_inner(MAX_MIXED)
+print(test)
+
+
+
+MPS1 = MPS(1, N,d,chi, False)
 #MPS1.initialize_halfstate()
 MPS1.initialize_flipstate()
 #MPS1.initialize_up_or_down(False)
-A = MPS1.construct_superket()
+
+
+
+
 
 temp = np.zeros((d,chi,chi))
 temp[0,0,0] = np.sqrt(4/5)
@@ -341,22 +401,15 @@ temp[1,0,0] = 1/np.sqrt(5)
 #MPS1.set_Gamma_singlesite(1, temp)
 
 
-Ham = Create_Ham(h, JXY, JZ, N, d)
 
 
-""" Ham is of shape (N,d**2,d**2), we want this to go to shape (N, d**4, d**4), so we must be careful how to use tensordot """
-#conj_ham = np.reshape(np.conj(Ham), (N-1,1,d**2,d**2))
-#sup_Ham = np.kron(Ham, conj_ham)[0]
-
-#sup_Ham = np.kron(Ham, np.eye(d**2))
-
-#sup_TimeOp = Create_TimeOp(sup_Ham, dt, N, d**2, use_CN)
-#print(sup_TimeOp)
+DENS1 = create_superket(MPS1)
 
 
-norm = np.zeros(steps)
-exp_sz = np.zeros((N,steps))
-TimeOp = Create_TimeOp(Ham, dt, N, d, use_CN)
+
+a = DENS1.calculate_vidal_inner(DENS1)
+print(a)
+del(DENS1)
 
 
 
@@ -407,7 +460,15 @@ def main():
 
 main()
 
+a = MPS1.calculate_vidal_inner(MPS1)
 
+DENS1 = create_superket(MPS1)
+b = DENS1.calculate_vidal_inner(DENS1)
+c = DENS1.calculate_vidal_inner(MAX_MIXED)
+
+print(a)
+print(b)
+print(c)
 
 
 
