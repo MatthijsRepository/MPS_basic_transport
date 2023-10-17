@@ -142,8 +142,8 @@ class MPS:
         self.Gamma_mat[i+1, :, :self.locsize[i+1],:self.locsize[i+2]] = tmp_gamma    
         return 
      
-    def TEBD_purestate(self, TimeOp, normalize):
-        """ TEBD algorithm for a pure state """
+    def TEBD(self, TimeOp, normalize):
+        """ TEBD algorithm """
         for i in range(0, self.N-1, 2):
             self.apply_twosite(TimeOp, i, normalize)
         for i in range(1, self.N-1, 2):
@@ -363,7 +363,7 @@ def main():
     TimeOp = Create_TimeOp(Ham, dt, N, d, use_CN)
     
     for t in range(im_steps):
-        MPS1.TEBD_purestate(im_TimeOp, normalize)
+        MPS1.TEBD(im_TimeOp, normalize)
             
         im_norm[t] = MPS1.calculate_vidal_inner(MPS1) #MPS1.calculate_vidal_norm()
         #exp_sz[t] = MPS1.expval(Sz, False, 0)
@@ -380,7 +380,7 @@ def main():
     plt.show()
     
     for t in range(steps):
-        MPS1.TEBD_purestate(TimeOp, normalize)
+        MPS1.TEBD(TimeOp, normalize)
             
         norm[t] = MPS1.calculate_vidal_inner(MPS1) #MPS1.calculate_vidal_norm()
         #exp_sz[t] = MPS1.expval(Sz, False, 0)
