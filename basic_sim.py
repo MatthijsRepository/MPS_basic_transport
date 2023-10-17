@@ -29,11 +29,11 @@ class MPS:
         return
 
     def initialize_halfstate(self):
-        """ Initializes the MPS into a product state of |+> eigenstates """
+        """ Initializes the MPS into a product state of uniform eigenstates """
         #self.B_mat[:,:,0,0] = 1/np.sqrt(2)
-        self.A_mat[:,:,0,0] = 1/np.sqrt(2)
+        self.A_mat[:,:,0,0] = 1/np.sqrt(self.d)
         self.Lambda_mat[:,0] = 1
-        self.Gamma_mat[:,:,0,0] = 1/np.sqrt(2)
+        self.Gamma_mat[:,:,0,0] = 1/np.sqrt(self.d)
         
         #self.locsize[:,:] = 1
         arr = np.arange(0,self.N+1)
@@ -50,8 +50,8 @@ class MPS:
                 self.A_mat[i,0,0,0] = 1
                 self.Gamma_mat[i,0,0,0] = 1
             else:
-                self.A_mat[i,1,0,0] = 1
-                self.Gamma_mat[i,1,0,0] = 1
+                self.A_mat[i,self.d-1,0,0] = 1
+                self.Gamma_mat[i,self.d-1,0,0] = 1
                
         #self.locsize[:,:] = 1
         arr = np.arange(0,self.N+1)
@@ -65,7 +65,7 @@ class MPS:
         if up:  #initialize each spin in up state
             i=0 
         else:   #initialize each spin in down state
-            i=1
+            i=self.d-1
         self.A_mat[:,i,0,0] = 1
         self.Lambda_mat[:,0] = 1
         self.Gamma_mat[:,i,0,0] = 1
@@ -139,7 +139,7 @@ class MPS:
         inv_lambdas *= self.Lambda_mat[i+2, :self.locsize[i+2]]
         inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
         tmp_gamma = np.tensordot(Z[:,:self.locsize[i+1],:self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
-        self.Gamma_mat[i+1, :, :self.locsize[i+1],:self.locsize[i+2]] = np.transpose(tmp_gamma,(0, 1, 2))    
+        self.Gamma_mat[i+1, :, :self.locsize[i+1],:self.locsize[i+2]] = tmp_gamma    
         return 
      
     def TEBD_purestate(self, TimeOp, normalize):
@@ -210,71 +210,6 @@ class MPS:
             m_total = np.tensordot(m_total,mp,axes=([0,1],[0,2]))    
         return abs(m_total[0,0])
     
-    
-    def sup_apply_twosite(self, TimeOp, i, normalize):
-        indices = np.array([], dtype=int)
-        for j in range(0,self.chi):
-            tempo = np.arange(self.chi) + j*self.chi*self.d
-            indices = np.concatenate((indices, tempo))
-        """ Applies a two-site operator to sites i and i+1 """
-        #First the matrices lambda-i to lambda-i+2 are contracted
-        theta = np.tensordot(np.diag(self.sup_Lambda_mat[i,:]), self.sup_Gamma_mat[i,:,:,:], axes=(1,1))  #(chi, chi, d) -> (chi, d, chi)
-        theta = np.tensordot(theta,np.diag(self.sup_Lambda_mat[i+1,:]),axes=(2,0)) #(chi, d, chi) 
-        theta = np.tensordot(theta, self.sup_Gamma_mat[i+1,:,:,:],axes=(2,1)) #(chi, d, chi, d) -> (chi,d,d,chi)
-        theta = np.tensordot(theta,np.diag(self.sup_Lambda_mat[i+2,:]), axes=(3,0)) #(chi, d, d, chi)
-        #operator is applied, tensor is reshaped
-        theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3])) #(chi,chi,d,d)              # Two-site operator
-        theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d**2 * self.chi**2, self.d**2 * self.chi**2)) #first to (d, chi, d, chi), then (d*chi, d*chi) # danger!
-
-        X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
-        print()
-        print(np.shape(X))
-        print(X)
-        print()
-        print(np.shape(Y))
-        print(Y)
-        print()
-        print(np.shape(Z))
-        print(Z.T)
-        if normalize:
-            self.sup_Lambda_mat[i+1,:] = Y[:self.chi**2]*1/np.linalg.norm(Y[:self.chi**2])
-        else:
-            self.sup_Lambda_mat[i+1,:] = Y[:self.chi]
-        
-        #truncation, and multiplication with the inverse lambda matrix of site i, where care is taken to avoid divides by 0
-        X = np.reshape(X[:self.d**2 * self.chi**2, indices], (self.d**2, self.chi**2, self.chi**2))  # danger!
-        inv_lambdas = np.ones(self.sup_locsize[i], dtype=complex)
-        inv_lambdas *= self.sup_Lambda_mat[i, :self.sup_locsize[i]]
-        inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
-        tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:,:self.sup_locsize[i],:self.sup_locsize[i+1]],axes=(1,1)) #(chi, d, chi)
-        self.sup_Gamma_mat[i, :, :self.sup_locsize[i],:self.sup_locsize[i+1]] = np.transpose(tmp_gamma,(1,0,2))
-        
-        #truncation, and multiplication with the inverse lambda matrix of site i+2, where care is taken to avoid divides by 0
-        Z = np.reshape(Z[:self.d**2 * self.chi**2, indices], (self.d**2, self.chi**2, self.chi**2))
-        Z = np.transpose(Z,(0,2,1))
-        inv_lambdas = np.ones(self.sup_locsize[i+2], dtype=complex)
-        inv_lambdas *= self.sup_Lambda_mat[i+2, :self.sup_locsize[i+2]]
-        inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
-        tmp_gamma = np.tensordot(Z[:,:self.sup_locsize[i+1],:self.sup_locsize[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
-        self.sup_Gamma_mat[i+1, :, :self.sup_locsize[i+1],:self.sup_locsize[i+2]] = np.transpose(tmp_gamma,(0, 1, 2))    
-        return 
-    
-    def TEBD_super(self, TimeOp, normalize):
-        """ TEBD algorithm for a pure state """
-        for i in range(0, self.N-1, 2):
-            self.sup_apply_twosite(TimeOp, i, normalize)
-        for i in range(1, self.N-1, 2):
-            self.sup_apply_twosite(TimeOp, i, normalize)
-        return
-    
-    def sup_calculate_vidal_norm(self):
-        """ Calculates the norm of the MPS """
-        m_total = np.eye(chi**2)
-        for j in range(0, self.N):        
-            st = np.tensordot(self.sup_Gamma_mat[j,:,:,:],np.diag(self.sup_Lambda_mat[j+1,:]), axes=(2,0)) #(d, chi, chi)
-            mp = np.tensordot(np.conj(st), st, axes=(0,0)) #(chi, chi, chi, chi)     
-            m_total = np.tensordot(m_total,mp,axes=([0,1],[0,2]))    
-        return np.real(m_total[0,0])
     
 
 ########################################################################################  
@@ -364,7 +299,7 @@ use_CN = False #choose if you want to use Crank-Nicolson approximation
 #### Simulation variables
 im_steps = 0
 im_dt = -0.01j
-steps=1
+steps=10
 dt = 0.01
 normalize = True
 
@@ -396,7 +331,7 @@ MPS1.initialize_flipstate()
 temp = np.zeros((d,chi,chi))
 temp[0,0,0] = np.sqrt(4/5)
 temp[1,0,0] = 1/np.sqrt(5)
-MPS1.set_Gamma(1, temp)
+#MPS1.set_Gamma(1, temp)
 
 
 Ham = Create_Ham(h, JXY, JZ, N, d)
@@ -416,34 +351,16 @@ norm = np.zeros(steps)
 exp_sz = np.zeros((N,steps))
 TimeOp = Create_TimeOp(Ham, dt, N, d, use_CN)
 
-temp = TimeOp.reshape(N-1, d**2,d**2)
-
-temp2 = np.conj(temp.transpose(0,2,1))
-temp2 = np.reshape(temp2, (N-1,1,d**2,d**2))
-
-temp = np.kron(temp, temp2)[0]
-sup_TimeOp = np.reshape(temp, (N-1,d**2,d**2,d**2,d**2))
-
-
-
-MPS1.construct_vidal_superket()
-
-MPS1.TEBD_purestate(TimeOp, normalize)
-MPS1.TEBD_super(sup_TimeOp, normalize)
-
-a = MPS1.sup_calculate_vidal_norm()
-print(a)
-
 
 
 def main():
-    im_TimeOp = Create_TimeOp(Ham, im_dt, N, d)
+    im_TimeOp = Create_TimeOp(Ham, im_dt, N, d, use_CN)
     im_norm = np.zeros(im_steps)
     im_exp_sz = np.zeros((N,im_steps))
     
     norm = np.zeros(steps)
     exp_sz = np.zeros((N,steps))
-    TimeOp = Create_TimeOp(Ham, dt, N, d)
+    TimeOp = Create_TimeOp(Ham, dt, N, d, use_CN)
     
     for t in range(im_steps):
         MPS1.TEBD_purestate(im_TimeOp, normalize)
@@ -481,7 +398,7 @@ def main():
 
 
 
-#main()
+main()
 
 
 
