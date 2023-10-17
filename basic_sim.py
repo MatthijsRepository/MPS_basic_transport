@@ -370,9 +370,9 @@ JZ=0
 use_CN = False #choose if you want to use Crank-Nicolson approximation
 
 #### Simulation variables
-im_steps = 10
+im_steps = 100
 im_dt = -0.01j
-steps=10
+steps=500
 dt = 0.01
 normalize = True
 
@@ -427,8 +427,8 @@ def main():
     exp_sz = np.zeros((N,steps))
     TimeOp = Create_TimeOp(Ham, dt, N, d, use_CN)
     
-    im_dens_norm = np.zeros(steps)
-    im_dens_exp_sz = np.zeros((N,steps))
+    im_dens_norm = np.zeros(im_steps)
+    im_dens_exp_sz = np.zeros((N,im_steps))
     im_dens_TimeOp = Create_TimeOp(dens_Ham, im_dt, N, d**2, use_CN)
     dens_norm = np.zeros(steps)
     dens_exp_sz = np.zeros((N,steps))
@@ -508,11 +508,11 @@ print(a)
 print(b)
 print(c)
 
-sz_test_s = MPS1.expval(Sz, False, 1)
-sz_test_d1 = DENS1.expval(np.kron(Sz, np.eye(d)), False, 1)
+sz_test_s = MPS1.expval(Sz, True, 1)
+sz_test_d1 = DENS1.expval(np.kron(Sz, np.eye(d)), True, 1)
 del(DENS1)
 DENS1 = create_superket(MPS1)
-sz_test_d2 = DENS1.expval(np.kron(Sz, np.eye(d)), False, 1)
+sz_test_d2 = DENS1.expval(np.kron(Sz, np.eye(d)), True, 1)
 
 print()
 print(sz_test_s)
