@@ -322,6 +322,7 @@ def Create_Diss_Array(s_coup, d):
     Diss_arr = np.zeros((), dtype=[
         ("index", int, 2),
         ("Operator", complex, (2, d**2, d**2))
+        ("TimeOp", complex, (2, d,d,d,d))
         ])
     
     Diss_arr["index"][0] = 0
@@ -331,17 +332,25 @@ def Create_Diss_Array(s_coup, d):
     Diss_arr["Operator"][1,:,:] = Create_Diss_site(np.sqrt(2*s_coup)*Sm, d)
     return Diss_arr
 
-def Create_Diss_TimeOp(Diss_arr):
-    return
+def Create_Diss_TimeOp(Diss_arr, dt, d, use_CN):
+    """ Calculates the dissipative time evolution operators """
+    for i in range(len(Diss_arr["index"])):
+        if use_CN:
+            temp = create_crank_nicolson(Diss_arr["Operator"][i], dt)
+        else:
+            temp = expm(dt*Diss_arr["Operator"][i])
+        temp = np.around(temp, decimals=15)    #Rounding out very low decimals 
+        Diss_arr["TimeOp"][i,:,:,:,:] = np.reshape(temp, (d,d,d,d))
+    return Diss_arr
 
 def Create_TimeOp(H, dt, N, d, use_CN):
     #H = np.reshape(H, (N-1, d**2, d**2))
     U = np.ones((N-1, d**2, d**2), dtype=complex)
     
     if use_CN:
-        U[0,:,:] = create_crank_nicolson(H[0], dt, N, d)
-        U[N-2,:,:] = create_crank_nicolson(H[N-2], dt, N, d)
-        U[1:N-2,:,:] *= create_crank_nicolson(H[1], dt, N, d) # we use broadcasting
+        U[0,:,:] = create_crank_nicolson(H[0], dt)
+        U[N-2,:,:] = create_crank_nicolson(H[N-2], dt)
+        U[1:N-2,:,:] *= create_crank_nicolson(H[1], dt) # we use broadcasting
     else:
         U[0,:,:] = expm(-1j*dt*H[0])
         U[N-2,:,:] = expm(-1j*dt*H[N-2])
@@ -350,7 +359,7 @@ def Create_TimeOp(H, dt, N, d, use_CN):
     U = np.around(U, decimals=15)        #Rounding out very low decimals 
     return np.reshape(U, (N-1,d,d,d,d)) 
 
-def create_crank_nicolson(H, dt, N, d):
+def create_crank_nicolson(H, dt):
     H_top=np.eye(H.shape[0])-1j*dt*H/2
     H_bot=np.eye(H.shape[0])+1j*dt*H/2
     return np.linalg.inv(H_bot).dot(H_top)
