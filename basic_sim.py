@@ -108,14 +108,14 @@ class MPS:
         return   
     
     
-    def construct_superket(self):
+    def construct_supermatrices(self):
         """ Constructs a superket of the density operator, following D. Jaschke et al. (2018) """
         sup_A_mat = np.zeros((self.N, self.d**2, self.chi**2, self.chi**2), dtype=complex)
         for i in range(self.N):
             sup_A_mat[i,:,:,:] = np.kron(self.A_mat[i], np.conj(self.A_mat[i]))
         return sup_A_mat, self.locsize**2
     
-    def construct_vidal_superket(self):
+    def construct_vidal_supermatrices(self):
         """ Constructs a superket of the density operator in Vidal decomposition """
         sup_Gamma_mat = np.zeros((self.N, self.d**2, self.chi**2, self.chi**2), dtype=complex)
         sup_Lambda_mat = np.zeros((self.N+1, self.chi**2))
@@ -302,6 +302,15 @@ def Create_Dens_Ham(h, JXY, JZ, N, d):
     return H_eff
 
 
+def add_lindblad_operator(Ham, L_Op, site):
+    # L_Op is shape (k,d,d) or (d,d)
+    if L_Op.ndim==2:
+        pass
+    else:
+        pass
+    return
+
+
 def Create_TimeOp(H, delta, N, d, use_CN):
     #H = np.reshape(H, (N-1, d**2, d**2))
     U = np.ones((N-1, d**2, d**2), dtype=complex)
@@ -328,7 +337,7 @@ def create_superket(State):
     """ create MPS of the density matrix of a given MPS """
     ID = State.give_ID()
     N, d, chi = State.give_NDchi()
-    gammas, lambdas, locsize = State.construct_vidal_superket()
+    gammas, lambdas, locsize = State.construct_vidal_supermatrices()
     
     name = "DENS" + str(ID)
     newDENS = MPS(ID, N, d**2, chi**2, True)
@@ -336,23 +345,23 @@ def create_superket(State):
     globals()[name] = newDENS
     return newDENS
 
-def create_max_mixed_state():
-    """ Creates vectorised density matrix of the maximally mixed state """
+def create_maxmixed_normstate():
+    """ Creates vectorised density matrix of an unnormalized maximally mixed state, used to calculate the trace of a vectorised density matrix """
     lambdas = np.zeros((N+1,chi**2))
     lambdas[:,0]= 1
     
     gammas = np.zeros((N,d**2,chi**2,chi**2), dtype=complex)
     diagonal = (1+d)*np.arange(d)
-    gammas[:,diagonal, 0, 0] = 1/np.sqrt(d)
+    gammas[:,diagonal, 0, 0] = 1        #/2  #/np.sqrt(2)
     
     arr = np.arange(0,N+1)
     arr = np.minimum(arr, N-arr)
     arr = np.minimum(arr,chi**2)               # For large L, d**arr returns negative values, this line prohibits this effect
     locsize = np.minimum((d**2)**arr, chi**2)
     
-    MAX_MIXED = MPS(0, N, d**2, chi**2, True)
-    MAX_MIXED.set_Gamma_Lambda(gammas, lambdas, locsize)
-    return MAX_MIXED
+    NORM_state = MPS(0, N, d**2, chi**2, True)
+    NORM_state.set_Gamma_Lambda(gammas, lambdas, locsize)
+    return NORM_state
 
 
 
@@ -398,7 +407,9 @@ MUST LOOK INTO: continued use of locsize even as entanglement in system grows?
 Ham = Create_Ham(h, JXY, JZ, N, d)
 dens_Ham = Create_Dens_Ham(h, JXY, JZ, N, d)
 
-MAX_MIXED = create_max_mixed_state()
+NORM_state = create_maxmixed_normstate()
+
+print(NORM_state.calculate_vidal_inner(NORM_state))
 
 
 
@@ -502,7 +513,7 @@ a = MPS1.calculate_vidal_inner(MPS1)
 
 DENS1 = create_superket(MPS1)
 b = DENS1.calculate_vidal_inner(DENS1)
-c = DENS1.calculate_vidal_inner(MAX_MIXED)
+c = DENS1.calculate_vidal_inner(NORM_state)
 
 print(a)
 print(b)
