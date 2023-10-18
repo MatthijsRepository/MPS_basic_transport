@@ -302,7 +302,7 @@ def Create_Dens_Ham(h, JXY, JZ, N, d):
     return H_eff
 
 
-def Create_Diss_site(L_Op, d):
+def Calculate_Diss_site(L_Op, d):
     """ Creates the dissipative term for a single site """
     """ L_Op is shape (k,d,d) or (d,d) -- the k-index is in case multiple different lindblad operators act on a single site """
     if L_Op.ndim==2:
@@ -321,18 +321,18 @@ def Create_Diss_Array(s_coup, d):
     """ Creates the array containing dissipative term, where 'index' stores the site the corresponding Lindblad operators couple to """
     Diss_arr = np.zeros((), dtype=[
         ("index", int, 2),
-        ("Operator", complex, (2, d**2, d**2))
+        ("Operator", complex, (2, d**2, d**2)),
         ("TimeOp", complex, (2, d,d,d,d))
         ])
     
     Diss_arr["index"][0] = 0
-    Diss_arr["Operator"][0,:,:] = Create_Diss_site(np.sqrt(2*s_coup)*Sp, d)
+    Diss_arr["Operator"][0,:,:] = Calculate_Diss_site(np.sqrt(2*s_coup)*Sp, d)
 
     Diss_arr["index"][1] = N-1
-    Diss_arr["Operator"][1,:,:] = Create_Diss_site(np.sqrt(2*s_coup)*Sm, d)
+    Diss_arr["Operator"][1,:,:] = Calculate_Diss_site(np.sqrt(2*s_coup)*Sm, d)
     return Diss_arr
 
-def Create_Diss_TimeOp(Diss_arr, dt, d, use_CN):
+def Calculate_Diss_TimeOp(Diss_arr, dt, d, use_CN):
     """ Calculates the dissipative time evolution operators """
     for i in range(len(Diss_arr["index"])):
         if use_CN:
@@ -404,11 +404,11 @@ N=3
 d=2
 chi=2
 
-#### Hamiltonian variables
-h=0
-JXY=-1
+#### Hamiltonian and Lindblad constants
+h=0.5
+JXY=1
 JZ=0
-use_CN = False #choose if you want to use Crank-Nicolson approximation
+s_coup = 0.3
 
 #### Simulation variables
 im_steps = 100
@@ -416,6 +416,7 @@ im_dt = -0.01j
 steps=500
 dt = 0.01
 normalize = True
+use_CN = False #choose if you want to use Crank-Nicolson approximation
 
 #### Spin matrices
 Sp = np.array([[0,1],[0,0]])
@@ -435,14 +436,18 @@ MUST LOOK INTO: continued use of locsize even as entanglement in system grows?
 
 
 ####################################################################################
+#### Initializing simulation tools
 
 Ham = Create_Ham(h, JXY, JZ, N, d)
 dens_Ham = Create_Dens_Ham(h, JXY, JZ, N, d)
 
+Diss_arr = Create_Diss_Array(s_coup, d)
+Diss_arr = Calculate_Diss_TimeOp(Diss_arr, dt, d, use_CN)
+
 NORM_state = create_maxmixed_normstate()
 
-print(NORM_state.calculate_vidal_inner(NORM_state))
-
+###############
+#### Simulation
 
 
 
@@ -452,9 +457,9 @@ MPS1 = MPS(1, N,d,chi, False)
 MPS1.initialize_flipstate()
 #MPS1.initialize_up_or_down(False)
 
-temp = np.zeros((d,chi,chi))
-temp[0,0,0] = np.sqrt(4/5)
-temp[1,0,0] = 1/np.sqrt(5)
+#temp = np.zeros((d,chi,chi))
+#temp[0,0,0] = np.sqrt(4/5)
+#temp[1,0,0] = 1/np.sqrt(5)
 #MPS1.set_Gamma_singlesite(1, temp)
 
 
