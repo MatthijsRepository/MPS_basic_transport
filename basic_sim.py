@@ -302,31 +302,53 @@ def Create_Dens_Ham(h, JXY, JZ, N, d):
     return H_eff
 
 
-def add_lindblad_operator(Ham, L_Op, site):
-    # L_Op is shape (k,d,d) or (d,d)
+def Create_Diss_site(L_Op, d):
+    """ Creates the dissipative term for a single site """
+    """ L_Op is shape (k,d,d) or (d,d) -- the k-index is in case multiple different lindblad operators act on a single site """
     if L_Op.ndim==2:
-        pass
+        Diss = np.kron(L_Op, np.conj(L_Op))
+        Diss -= 1/2* np.kron(np.matmul(np.conj(np.transpose(L_Op)), L_Op), np.eye(d))
+        Diss -= 1/2* np.kron(np.eye(d), np.matmul(np.transpose(L_Op), np.conj(L_Op)))
     else:
-        pass
+        Diss = np.zeros((d**2, d**2), dtype=complex)
+        for i in range(np.shape(L_Op)[0]):
+            Diss += np.kron(L_Op[i], np.conj(L_Op[i]))
+            Diss -= 1/2* np.kron(np.matmul(np.conj(np.transpose(L_Op[i])), L_Op[i]), np.eye(d))
+            Diss -= 1/2* np.kron(np.eye(d), np.matmul(np.transpose(L_Op[i]), np.conj(L_Op[i])))
+    return Diss
+
+def Create_Diss_Array(s_coup, d):
+    """ Creates the array containing dissipative term, where 'index' stores the site the corresponding Lindblad operators couple to """
+    Diss_arr = np.zeros((), dtype=[
+        ("index", int, 2),
+        ("Operator", complex, (2, d**2, d**2))
+        ])
+    
+    Diss_arr["index"][0] = 0
+    Diss_arr["Operator"][0,:,:] = Create_Diss_site(np.sqrt(2*s_coup)*Sp, d)
+
+    Diss_arr["index"][1] = N-1
+    Diss_arr["Operator"][1,:,:] = Create_Diss_site(np.sqrt(2*s_coup)*Sm, d)
+    return Diss_arr
+
+def Create_Diss_TimeOp(Diss_arr):
     return
 
-
-def Create_TimeOp(H, delta, N, d, use_CN):
+def Create_TimeOp(H, dt, N, d, use_CN):
     #H = np.reshape(H, (N-1, d**2, d**2))
     U = np.ones((N-1, d**2, d**2), dtype=complex)
     
     if use_CN:
-        U[0,:,:] = create_crank_nicolson(H[0], delta, N, d)
-        U[N-2,:,:] = create_crank_nicolson(H[N-2], delta, N, d)
-        U[1:N-2,:,:] *= create_crank_nicolson(H[1], delta, N, d) # we use broadcasting
+        U[0,:,:] = create_crank_nicolson(H[0], dt, N, d)
+        U[N-2,:,:] = create_crank_nicolson(H[N-2], dt, N, d)
+        U[1:N-2,:,:] *= create_crank_nicolson(H[1], dt, N, d) # we use broadcasting
     else:
-        U[0,:,:] = expm(-1j*delta*H[0])
-        U[N-2,:,:] = expm(-1j*delta*H[N-2])
-        U[1:N-2,:,:] *= expm(-1j*delta*H[1]) # we use broadcasting
+        U[0,:,:] = expm(-1j*dt*H[0])
+        U[N-2,:,:] = expm(-1j*dt*H[N-2])
+        U[1:N-2,:,:] *= expm(-1j*dt*H[1]) # we use broadcasting
 
     U = np.around(U, decimals=15)        #Rounding out very low decimals 
     return np.reshape(U, (N-1,d,d,d,d)) 
-
 
 def create_crank_nicolson(H, dt, N, d):
     H_top=np.eye(H.shape[0])-1j*dt*H/2
@@ -347,6 +369,7 @@ def create_superket(State):
 
 def create_maxmixed_normstate():
     """ Creates vectorised density matrix of an unnormalized maximally mixed state, used to calculate the trace of a vectorised density matrix """
+    """ since to obtain rho11 + rho22 you must take inner [1 0 0 1] [rho11 rho12 rho21 rho22]^T without a factor 1/sqrt(2) in front """
     lambdas = np.zeros((N+1,chi**2))
     lambdas[:,0]= 1
     
@@ -512,11 +535,9 @@ main()
 a = MPS1.calculate_vidal_inner(MPS1)
 
 DENS1 = create_superket(MPS1)
-b = DENS1.calculate_vidal_inner(DENS1)
 c = DENS1.calculate_vidal_inner(NORM_state)
 
 print(a)
-print(b)
 print(c)
 
 sz_test_s = MPS1.expval(Sz, True, 1)
