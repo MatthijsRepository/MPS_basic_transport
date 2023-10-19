@@ -125,6 +125,25 @@ class MPS:
         sup_Lambda_mat[N,:] = np.kron(self.Lambda_mat[N], self.Lambda_mat[N])
         return sup_Gamma_mat, sup_Lambda_mat, self.locsize**2
     
+    
+    def apply_singlesite(self, TimeOp, i, normalize):
+        theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,1))  #(chi, chi, d) -> (chi, d, chi)
+        theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(2,0)) #(chi, d, chi) 
+        theta_prime = np.tensordot(theta, TimeOp, axes=(1,1)) #(chi, chi, d)
+        if normalize:
+            theta_prime = theta_prime / np.linalg.norm(theta_prime)
+        
+        inv_lambdas = np.ones(self.chi, dtype=complex)  #not working with locsize here
+        inv_lambdas *= self.Lambda_mat[i]
+        inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
+        theta_prime = np.tensordot(np.diag(inv_lambdas), theta_prime, axes=(1,0)) #(chi, chi, d) 
+        
+        inv_lambdas = np.ones(self.chi, dtype=complex)  #not working with locsize here
+        inv_lambdas *= self.Lambda_mat[i+1]
+        inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
+        theta_prime = np.tensordot(theta_prime, np.diag(inv_lambdas), axes=(1,0)) #(chi, d, chi)
+        self.Gamma_mat[i,:,:,:] = np.transpose(theta_prime, (1,0,2))
+        return
    
     def apply_twosite(self, TimeOp, i, normalize):
         """ Applies a two-site operator to sites i and i+1 """
@@ -140,7 +159,11 @@ class MPS:
         X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
         
         if normalize:
-            self.Lambda_mat[i+1,:] = Y[:self.chi]*1/np.linalg.norm(Y[:self.chi])
+            if self.is_density:
+                self.Lambda_mat[i+1,:] = Y[:self.chi]*1/np.linalg.norm(Y[:self.chi])
+                #self.Lambda_mat[i+1,:] = Y[:self.chi]
+            else:   
+                self.Lambda_mat[i+1,:] = Y[:self.chi]*1/np.linalg.norm(Y[:self.chi])
         else:
             self.Lambda_mat[i+1,:] = Y[:self.chi]
         
@@ -322,7 +345,7 @@ def Create_Diss_Array(s_coup, d):
     Diss_arr = np.zeros((), dtype=[
         ("index", int, 2),
         ("Operator", complex, (2, d**2, d**2)),
-        ("TimeOp", complex, (2, d,d,d,d))
+        ("TimeOp", complex, (2, d**2, d**2))
         ])
     
     Diss_arr["index"][0] = 0
@@ -340,7 +363,7 @@ def Calculate_Diss_TimeOp(Diss_arr, dt, d, use_CN):
         else:
             temp = expm(dt*Diss_arr["Operator"][i])
         temp = np.around(temp, decimals=15)    #Rounding out very low decimals 
-        Diss_arr["TimeOp"][i,:,:,:,:] = np.reshape(temp, (d,d,d,d))
+        Diss_arr["TimeOp"][i,:,:] = temp
     return Diss_arr
 
 def Create_TimeOp(H, dt, N, d, use_CN):
@@ -402,7 +425,7 @@ def create_maxmixed_normstate():
 #### MPS constants
 N=3
 d=2
-chi=2
+chi=3
 
 #### Hamiltonian and Lindblad constants
 h=0.5
@@ -462,8 +485,8 @@ MPS1.initialize_flipstate()
 #temp[1,0,0] = 1/np.sqrt(5)
 #MPS1.set_Gamma_singlesite(1, temp)
 
-
 DENS1 = create_superket(MPS1)
+
 
 
 
@@ -487,7 +510,7 @@ def main():
         DENS1.TEBD(im_dens_TimeOp, normalize)
             
         im_norm[t] = MPS1.calculate_vidal_inner(MPS1) #MPS1.calculate_vidal_norm()
-        im_dens_norm[t] = DENS1.calculate_vidal_inner(DENS1)
+        im_dens_norm[t] = DENS1.calculate_vidal_inner(NORM_state)
         #exp_sz[t] = MPS1.expval(Sz, False, 0)
         for j in range(N):
             im_exp_sz[j,t] = MPS1.expval(Sz, True, j)
@@ -517,7 +540,7 @@ def main():
         DENS1.TEBD(dens_TimeOp, normalize)
             
         norm[t] = MPS1.calculate_vidal_inner(MPS1) #MPS1.calculate_vidal_norm()
-        dens_norm[t] = DENS1.calculate_vidal_inner(DENS1)
+        dens_norm[t] = DENS1.calculate_vidal_inner(NORM_state)
         #exp_sz[t] = MPS1.expval(Sz, False, 0)
         for j in range(N):
             exp_sz[j,t] = MPS1.expval(Sz, True, j)
@@ -548,12 +571,18 @@ main()
 
 a = MPS1.calculate_vidal_inner(MPS1)
 
-DENS1 = create_superket(MPS1)
+#DENS1 = create_superket(MPS1)
 c = DENS1.calculate_vidal_inner(NORM_state)
 
 print(a)
 print(c)
 
+
+DENS1 = create_superket(MPS1)
+d =DENS1.calculate_vidal_inner(NORM_state)
+print(d)
+
+"""
 sz_test_s = MPS1.expval(Sz, True, 1)
 sz_test_d1 = DENS1.expval(np.kron(Sz, np.eye(d)), True, 1)
 del(DENS1)
@@ -564,7 +593,7 @@ print()
 print(sz_test_s)
 print(sz_test_d1)
 print(sz_test_d2)
-
+"""
 
 
 
