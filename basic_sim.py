@@ -4,6 +4,7 @@ os.chdir("C:\\Users\\matth\\OneDrive\\Documents\\TUDelft\\MEP\\code\\MPS_basic_t
 import numpy as np
 from scipy.linalg import expm
 import matplotlib.pyplot as plt
+import time
 
 
 class MPS:
@@ -185,13 +186,18 @@ class MPS:
         self.Gamma_mat[i+1, :, :self.locsize[i+1],:self.locsize[i+2]] = tmp_gamma    
         return 
      
-    def TEBD(self, TimeOp, normalize):
+    def TEBD(self, TimeOp, Diss_arr, normalize, Diss_bool):
         """ TEBD algorithm """
         for i in range(0, self.N-1, 2):
             self.apply_twosite(TimeOp, i, normalize)
         for i in range(1, self.N-1, 2):
             self.apply_twosite(TimeOp, i, normalize)
+        
+        if Diss_bool:
+            for i in range(len(Diss_arr["index"])):
+                self.apply_singlesite(Diss_arr["TimeOp"][i], Diss_arr["index"][i], normalize)
         return
+    
   
     def apply_MPO_locsize(self, MPO_L, MPO_M, MPO_R):
         """ Applies an MPO to the MPS """
@@ -423,9 +429,9 @@ def create_maxmixed_normstate():
 ####################################################################################
 
 #### MPS constants
-N=3
+N=20
 d=2
-chi=3
+chi=10
 
 #### Hamiltonian and Lindblad constants
 h=0.5
@@ -460,6 +466,7 @@ MUST LOOK INTO: continued use of locsize even as entanglement in system grows?
 
 ####################################################################################
 #### Initializing simulation tools
+t0 = time.time()
 
 Ham = Create_Ham(h, JXY, JZ, N, d)
 dens_Ham = Create_Dens_Ham(h, JXY, JZ, N, d)
@@ -476,8 +483,8 @@ NORM_state = create_maxmixed_normstate()
 
 MPS1 = MPS(1, N,d,chi, False)
 
-#MPS1.initialize_halfstate()
-MPS1.initialize_flipstate()
+MPS1.initialize_halfstate()
+#MPS1.initialize_flipstate()
 #MPS1.initialize_up_or_down(False)
 
 #temp = np.zeros((d,chi,chi))
@@ -506,14 +513,16 @@ def main():
     dens_TimeOp = Create_TimeOp(dens_Ham, dt, N, d**2, use_CN)
     
     for t in range(im_steps):
-        MPS1.TEBD(im_TimeOp, normalize)
-        DENS1.TEBD(im_dens_TimeOp, normalize)
+        if (t%1)==0:
+            print(t)
+        #MPS1.TEBD(im_TimeOp, None, normalize, False)
+        DENS1.TEBD(im_dens_TimeOp, None, normalize, False)
             
-        im_norm[t] = MPS1.calculate_vidal_inner(MPS1) #MPS1.calculate_vidal_norm()
+        #im_norm[t] = MPS1.calculate_vidal_inner(MPS1) #MPS1.calculate_vidal_norm()
         im_dens_norm[t] = DENS1.calculate_vidal_inner(NORM_state)
         #exp_sz[t] = MPS1.expval(Sz, False, 0)
         for j in range(N):
-            im_exp_sz[j,t] = MPS1.expval(Sz, True, j)
+            #im_exp_sz[j,t] = MPS1.expval(Sz, True, j)
             im_dens_exp_sz[j,t] = DENS1.expval(np.kron(Sz, np.eye(d)), True, j)
         
     plt.plot(im_norm, label="MPS")
@@ -536,14 +545,16 @@ def main():
     
     
     for t in range(steps):
-        MPS1.TEBD(TimeOp, normalize)
-        DENS1.TEBD(dens_TimeOp, normalize)
+        if (t%10)==0:
+            print(t)
+        #MPS1.TEBD(TimeOp, None, normalize, False)
+        DENS1.TEBD(dens_TimeOp, Diss_arr, normalize, True)
             
-        norm[t] = MPS1.calculate_vidal_inner(MPS1) #MPS1.calculate_vidal_norm()
-        dens_norm[t] = DENS1.calculate_vidal_inner(NORM_state)
+        #norm[t] = MPS1.calculate_vidal_inner(MPS1) #MPS1.calculate_vidal_norm()
+        #dens_norm[t] = DENS1.calculate_vidal_inner(NORM_state)
         #exp_sz[t] = MPS1.expval(Sz, False, 0)
         for j in range(N):
-            exp_sz[j,t] = MPS1.expval(Sz, True, j)
+            #exp_sz[j,t] = MPS1.expval(Sz, True, j)
             dens_exp_sz[j,t] = DENS1.expval(np.kron(Sz, np.eye(d)), True, j)
     
     plt.plot(norm, label="MPS")
@@ -568,6 +579,18 @@ def main():
 
 
 main()
+
+
+test = np.zeros(N)
+for i in range(N):
+    test[i] = DENS1.expval(np.kron(Sz, np.eye(d)), True, i)
+plt.plot(test)
+plt.show()
+
+
+
+
+
 
 a = MPS1.calculate_vidal_inner(MPS1)
 
@@ -620,3 +643,4 @@ print(sz_test_d2)
 
 
 
+print(time.time()-t0)
