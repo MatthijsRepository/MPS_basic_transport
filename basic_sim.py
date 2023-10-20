@@ -109,22 +109,23 @@ class MPS:
         return   
     
     
-    def construct_supermatrices(self):
+    def construct_supermatrices(self, newchi):
         """ Constructs a superket of the density operator, following D. Jaschke et al. (2018) """
-        sup_A_mat = np.zeros((self.N, self.d**2, self.chi**2, self.chi**2), dtype=complex)
+        sup_A_mat = np.zeros((self.N, self.d**2, newchi**2, newchi**2), dtype=complex)
         for i in range(self.N):
-            sup_A_mat[i,:,:,:] = np.kron(self.A_mat[i], np.conj(self.A_mat[i]))
-        return sup_A_mat, self.locsize**2
+            sup_A_mat[i,:,:,:] = np.kron(self.A_mat[i], np.conj(self.A_mat[i]))[:newchi, :newchi]
+        return sup_A_mat, np.minimum(self.locsize**2, newchi)
     
-    def construct_vidal_supermatrices(self):
+    def construct_vidal_supermatrices(self, newchi):
         """ Constructs a superket of the density operator in Vidal decomposition """
-        sup_Gamma_mat = np.zeros((self.N, self.d**2, self.chi**2, self.chi**2), dtype=complex)
-        sup_Lambda_mat = np.zeros((self.N+1, self.chi**2))
+        sup_Gamma_mat = np.zeros((self.N, self.d**2, newchi, newchi), dtype=complex)
+        sup_Lambda_mat = np.zeros((self.N+1, newchi))
         for i in range(self.N):
-            sup_Gamma_mat[i,:,:,:] = np.kron(self.Gamma_mat[i], np.conj(self.Gamma_mat[i]))
-            sup_Lambda_mat[i,:] = np.kron(self.Lambda_mat[i], self.Lambda_mat[i])
-        sup_Lambda_mat[N,:] = np.kron(self.Lambda_mat[N], self.Lambda_mat[N])
-        return sup_Gamma_mat, sup_Lambda_mat, self.locsize**2
+            sup_Gamma_mat[i,:,:,:] = np.kron(self.Gamma_mat[i], np.conj(self.Gamma_mat[i]))[:,:newchi,:newchi]
+            sup_Lambda_mat[i,:] = np.kron(self.Lambda_mat[i], self.Lambda_mat[i])[:newchi]
+        sup_Lambda_mat[N,:] = np.kron(self.Lambda_mat[N], self.Lambda_mat[N])[:newchi]
+        sup_locsize = np.minimum(self.locsize**2, newchi)
+        return sup_Gamma_mat, sup_Lambda_mat, sup_locsize
     
     
     def apply_singlesite(self, TimeOp, i, normalize):
@@ -393,14 +394,14 @@ def create_crank_nicolson(H, dt):
     H_bot=np.eye(H.shape[0])+1j*dt*H/2
     return np.linalg.inv(H_bot).dot(H_top)
 
-def create_superket(State):
+def create_superket(State, newchi):
     """ create MPS of the density matrix of a given MPS """
     ID = State.give_ID()
     N, d, chi = State.give_NDchi()
-    gammas, lambdas, locsize = State.construct_vidal_supermatrices()
+    gammas, lambdas, locsize = State.construct_vidal_supermatrices(newchi)
     
     name = "DENS" + str(ID)
-    newDENS = MPS(ID, N, d**2, chi**2, True)
+    newDENS = MPS(ID, N, d**2, newchi, True)
     newDENS.set_Gamma_Lambda(gammas, lambdas, locsize)
     globals()[name] = newDENS
     return newDENS
@@ -408,19 +409,19 @@ def create_superket(State):
 def create_maxmixed_normstate():
     """ Creates vectorised density matrix of an unnormalized maximally mixed state, used to calculate the trace of a vectorised density matrix """
     """ since to obtain rho11 + rho22 you must take inner [1 0 0 1] [rho11 rho12 rho21 rho22]^T without a factor 1/sqrt(2) in front """
-    lambdas = np.zeros((N+1,chi**2))
+    lambdas = np.zeros((N+1,newchi))
     lambdas[:,0]= 1
     
-    gammas = np.zeros((N,d**2,chi**2,chi**2), dtype=complex)
+    gammas = np.zeros((N,d**2,newchi,newchi), dtype=complex)
     diagonal = (1+d)*np.arange(d)
     gammas[:,diagonal, 0, 0] = 1        #/2  #/np.sqrt(2)
     
     arr = np.arange(0,N+1)
     arr = np.minimum(arr, N-arr)
-    arr = np.minimum(arr,chi**2)               # For large L, d**arr returns negative values, this line prohibits this effect
-    locsize = np.minimum((d**2)**arr, chi**2)
+    arr = np.minimum(arr,newchi**2)               # For large L, d**arr returns negative values, this line prohibits this effect
+    locsize = np.minimum((d**2)**arr, newchi**2)
     
-    NORM_state = MPS(0, N, d**2, chi**2, True)
+    NORM_state = MPS(0, N, d**2, newchi, True)
     NORM_state.set_Gamma_Lambda(gammas, lambdas, locsize)
     return NORM_state
 
@@ -429,9 +430,10 @@ def create_maxmixed_normstate():
 ####################################################################################
 
 #### MPS constants
-N=20
+N=8
 d=2
-chi=10
+chi=10       #MPS truncation parameter
+newchi=40   #DENS truncation parameter
 
 #### Hamiltonian and Lindblad constants
 h=0.5
@@ -440,9 +442,9 @@ JZ=0
 s_coup = 0.3
 
 #### Simulation variables
-im_steps = 100
-im_dt = -0.01j
-steps=500
+im_steps = 33
+im_dt = -0.03j
+steps=420
 dt = 0.01
 normalize = True
 use_CN = False #choose if you want to use Crank-Nicolson approximation
@@ -483,8 +485,8 @@ NORM_state = create_maxmixed_normstate()
 
 MPS1 = MPS(1, N,d,chi, False)
 
-MPS1.initialize_halfstate()
-#MPS1.initialize_flipstate()
+#MPS1.initialize_halfstate()
+MPS1.initialize_flipstate()
 #MPS1.initialize_up_or_down(False)
 
 #temp = np.zeros((d,chi,chi))
@@ -492,7 +494,7 @@ MPS1.initialize_halfstate()
 #temp[1,0,0] = 1/np.sqrt(5)
 #MPS1.set_Gamma_singlesite(1, temp)
 
-DENS1 = create_superket(MPS1)
+DENS1 = create_superket(MPS1, newchi)
 
 
 
@@ -513,16 +515,16 @@ def main():
     dens_TimeOp = Create_TimeOp(dens_Ham, dt, N, d**2, use_CN)
     
     for t in range(im_steps):
-        if (t%1)==0:
+        if (t%10)==0:
             print(t)
-        #MPS1.TEBD(im_TimeOp, None, normalize, False)
+        MPS1.TEBD(im_TimeOp, None, normalize, False)
         DENS1.TEBD(im_dens_TimeOp, None, normalize, False)
             
-        #im_norm[t] = MPS1.calculate_vidal_inner(MPS1) #MPS1.calculate_vidal_norm()
+        im_norm[t] = MPS1.calculate_vidal_inner(MPS1) #MPS1.calculate_vidal_norm()
         im_dens_norm[t] = DENS1.calculate_vidal_inner(NORM_state)
-        #exp_sz[t] = MPS1.expval(Sz, False, 0)
+        #im_exp_sz[t] = MPS1.expval(Sz, False, 0)
         for j in range(N):
-            #im_exp_sz[j,t] = MPS1.expval(Sz, True, j)
+            im_exp_sz[j,t] = MPS1.expval(Sz, True, j)
             im_dens_exp_sz[j,t] = DENS1.expval(np.kron(Sz, np.eye(d)), True, j)
         
     plt.plot(im_norm, label="MPS")
@@ -547,14 +549,14 @@ def main():
     for t in range(steps):
         if (t%10)==0:
             print(t)
-        #MPS1.TEBD(TimeOp, None, normalize, False)
-        DENS1.TEBD(dens_TimeOp, Diss_arr, normalize, True)
+        MPS1.TEBD(TimeOp, None, normalize, False)
+        DENS1.TEBD(dens_TimeOp, Diss_arr, normalize, False)
             
         #norm[t] = MPS1.calculate_vidal_inner(MPS1) #MPS1.calculate_vidal_norm()
         #dens_norm[t] = DENS1.calculate_vidal_inner(NORM_state)
         #exp_sz[t] = MPS1.expval(Sz, False, 0)
         for j in range(N):
-            #exp_sz[j,t] = MPS1.expval(Sz, True, j)
+            exp_sz[j,t] = MPS1.expval(Sz, True, j)
             dens_exp_sz[j,t] = DENS1.expval(np.kron(Sz, np.eye(d)), True, j)
     
     plt.plot(norm, label="MPS")
@@ -594,14 +596,14 @@ plt.show()
 
 a = MPS1.calculate_vidal_inner(MPS1)
 
-#DENS1 = create_superket(MPS1)
+#DENS1 = create_superket(MPS1, newchi)
 c = DENS1.calculate_vidal_inner(NORM_state)
 
 print(a)
 print(c)
 
 
-DENS1 = create_superket(MPS1)
+DENS1 = create_superket(MPS1, newchi)
 d =DENS1.calculate_vidal_inner(NORM_state)
 print(d)
 
