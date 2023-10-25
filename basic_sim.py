@@ -16,7 +16,8 @@ class MPS:
         self.is_density = is_density
         if is_density:
             self.name = "DENS"+str(ID)
-        else: self.name = "MPS"+str(ID)
+        else: 
+            self.name = "MPS"+str(ID)
         
         self.A_mat = np.zeros((N,d,chi,chi), dtype=complex) 
         #self.B_mat = np.zeros((N,d,chi,chi), dtype=complex)
@@ -205,7 +206,7 @@ class MPS:
     
     
     def expval(self, Op, singlesite, site):
-        """ Calculates the expectation value of an operator Op, either for a single site or the average over the chain """
+        """ Calculates the expectation value of an operator Op, either for a single site or for the entire chain """
         if singlesite:
             theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
             theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
@@ -213,13 +214,13 @@ class MPS:
             result = np.tensordot(np.conj(theta_prime),theta,axes=([0,1,2],[0,2,1]))
             return np.real(result)
  
-        result = 0      #calculate expval for entire chain
+        result = np.zeros(self.N)      #calculate expval for entire chain
         for i in range(self.N):
             theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,1)) #(chi, d, chi)
             theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(2,0)) #(chi,d,chi)
             theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d) 
-            result += np.real(np.tensordot(np.conj(theta_prime),theta,axes=([0,1,2],[0,2,1])))
-        return result/self.N
+            result[i] = np.real(np.tensordot(np.conj(theta_prime),theta,axes=([0,1,2],[0,2,1])))
+        return result
     
     def calculate_vidal_norm(self):
         """ Calculates the norm of the MPS """
@@ -241,25 +242,30 @@ class MPS:
             m_total = np.tensordot(m_total,mp,axes=([0,1],[0,2]))    
         return abs(m_total[0,0])
     
-    def time_evolution(self, TimeOp, Diss_arr, normalize, Diss_bool, timestep, steps, exp_operators):
+    def time_evolution(self, TimeOp, Diss_arr, normalize, Diss_bool, timestep, steps, desired_expectations):
         """ Time evolution method of the MPS """
         if (self.is_density==False): #If MPS is a purestate then Diss_bool must be False
             Diss_bool = False
-        exp_values = np.zeros((len(exp_operators), steps)) #array to store expectation values in
+        exp_values = np.ones((len(desired_expectations), self.N, steps)) #array to store expectation values in
         
         for t in range(steps):
-            if t%10:
+            if (t%10==0):
                 print(t)
             self.TEBD(TimeOp, Diss_arr, normalize, Diss_bool)
-            for i in range(len(exp_operators)):
-                exp_values[i,t] = self.expval(exp_operators[i][1], exp_operators[i][2], exp_operators[i][3])
+            for i in range(len(desired_expectations)):
+                exp_values[i,:,t] *= self.expval(desired_expectations[i][1], desired_expectations[i][2], desired_expectations[i][3])
         
         time_axis = np.arange(steps)*timestep
-        for i in range(len(exp_operators)):
-            plt.plot(time_axis, exp_values[i,:])
+        for i in range(len(desired_expectations)):
+            if desired_expectations[i][2]==False:
+                for j in range(self.N):
+                    plt.plot(time_axis, exp_values[i,j,:], label=f"Site {j}")
+            else:
+                plt.plot(time_axis, exp_values[i,0,:], label=f"Site {desired_expectations[i][3]}")
             plt.xlabel("Time")
-            plt.ylabel(f"<{exp_operators[i][0]}>")
-            plt.title(f"Plot of <{exp_operators[i][0]}> of {self.name} over time")
+            plt.ylabel(f"<{desired_expectations[i][0]}>")
+            plt.legend()
+            plt.title(f"Plot of <{desired_expectations[i][0]}> of {self.name} over time")
             plt.grid()
             plt.show()
         return
@@ -432,10 +438,11 @@ s_coup = 1
 #### Simulation variables
 im_steps = 0
 im_dt = -0.03j
-steps=450
+steps=20
 dt = 0.01
 normalize = True
 use_CN = False #choose if you want to use Crank-Nicolson approximation
+Diss_bool = True
 
 #### Spin matrices
 Sp = np.array([[0,1],[0,0]])
@@ -456,24 +463,13 @@ MUST LOOK INTO: continued use of locsize even as entanglement in system grows?
 
 ####################################################################################
 #### Initializing simulation tools
-t0 = time.time()
-
-Ham = Create_Ham(h, JXY, JZ, N, d)
-dens_Ham = Create_Dens_Ham(h, JXY, JZ, N, d)
-
-Diss_arr = Create_Diss_Array(s_coup, d)
-Diss_arr = Calculate_Diss_TimeOp(Diss_arr, dt, d, use_CN)
-
-NORM_state = create_maxmixed_normstate()
 
 ###############
 #### Simulation
 
 
 
-MPS1 = MPS(1, N,d,chi, False)
 
-MPS1.initialize_halfstate()
 #MPS1.initialize_flipstate()
 #MPS1.initialize_up_or_down(False)
 
@@ -482,114 +478,53 @@ MPS1.initialize_halfstate()
 #temp[1,0,0] = 1/np.sqrt(5)
 #MPS1.set_Gamma_singlesite(1, temp)
 
-DENS1 = create_superket(MPS1, newchi)
 
 
 
 
-def main():
-    im_norm = np.zeros(im_steps)
-    im_exp_sz = np.zeros((N,im_steps))
-    im_TimeOp = Create_TimeOp(Ham, im_dt, N, d, use_CN)
-    norm = np.zeros(steps)
-    exp_sz = np.zeros((N,steps))
-    TimeOp = Create_TimeOp(Ham, dt, N, d, use_CN)
-    
-    im_dens_norm = np.zeros(im_steps)
-    im_dens_exp_sz = np.zeros((N,im_steps))
-    im_dens_TimeOp = Create_TimeOp(dens_Ham, im_dt, N, d**2, use_CN)
-    dens_norm = np.zeros(steps)
-    dens_exp_sz = np.zeros((N,steps))
-    dens_TimeOp = Create_TimeOp(dens_Ham, dt, N, d**2, use_CN)
-    
-    for t in range(im_steps):
-        if (t%10)==0:
-            print(t)
-        #MPS1.TEBD(im_TimeOp, None, normalize, False)
-        DENS1.TEBD(im_dens_TimeOp, None, normalize, False)
-            
-        #im_norm[t] = MPS1.calculate_vidal_inner(MPS1) #MPS1.calculate_vidal_norm()
-        im_dens_norm[t] = DENS1.calculate_vidal_inner(NORM_state)
-        #im_exp_sz[t] = MPS1.expval(Sz, False, 0)
-        for j in range(N):
-            #im_exp_sz[j,t] = MPS1.expval(Sz, True, j)
-            im_dens_exp_sz[j,t] = DENS1.expval(np.kron(Sz, np.eye(d)), True, j)
-        
-    #plt.plot(im_norm, label="MPS")
-    plt.plot(im_dens_norm, label="DENS")
-    plt.title("Normalization during im time evolution")
-    plt.legend()
-    plt.show()
-    
-    for j in range(N):
-        plt.plot(im_exp_sz[j,:], label=f"spin {j}")
-    plt.title("MPS <Sz> per site during im time evolution")
-    plt.legend()
-    plt.show()
-    
-    for j in range(N):
-        plt.plot(im_dens_exp_sz[j,:], label=f"spin {j}")
-    plt.title("DENS <Sz> per site during im time evolution")
-    plt.legend()
-    plt.show()
-    
-    
-    for t in range(steps):
-        if (t%10)==0:
-            print(t)
-        #MPS1.TEBD(TimeOp, None, normalize, False)
-        DENS1.TEBD(dens_TimeOp, Diss_arr, normalize, True)
-            
-        #norm[t] = MPS1.calculate_vidal_inner(MPS1) #MPS1.calculate_vidal_norm()
-        #dens_norm[t] = DENS1.calculate_vidal_inner(NORM_state)
-        #exp_sz[t] = MPS1.expval(Sz, False, 0)
-        for j in range(N):
-            #exp_sz[j,t] = MPS1.expval(Sz, True, j)
-            dens_exp_sz[j,t] = DENS1.expval(np.kron(Sz, np.eye(d)), True, j)
-    
-    #plt.plot(norm, label="MPS")
-    plt.plot(dens_norm, label="DENS")
-    plt.title("Normalization during time evolution")
-    plt.legend()
-    plt.show()
-    
-    for j in range(N):
-        plt.plot(exp_sz[j,:], label=f"spin {j}")
-    plt.title("MPS <Sz> per site during time evolution")
-    plt.legend()
-    plt.show()
-    
-    for j in range(N):
-        plt.plot(dens_exp_sz[j,:], label=f"spin {j}")
-    plt.title("DENS <Sz> per site during time evolution")
-    plt.legend()
-    plt.show()
-    pass
+
+
 
 
 
 #main()
 
-def new_main():
-    im_dens_TimeOp = Create_TimeOp(dens_Ham, im_dt, N, d**2, use_CN)
-    dens_TimeOp = Create_TimeOp(dens_Ham, dt, N, d**2, use_CN)
-    Diss_bool = True
-    exp_operators = []
-    exp_operators.append(("Sz", np.kron(Sz, np.eye(d)), True, 0))
+def main():
+    t0 = time.time()
     
+    MPS1 = MPS(1, N,d,chi, False)
+    MPS1.initialize_halfstate()
+    DENS1 = create_superket(MPS1, newchi)
 
-    DENS1.time_evolution(dens_TimeOp, Diss_arr, normalize, Diss_bool, dt, steps, exp_operators)
+    Ham = Create_Ham(h, JXY, JZ, N, d)
+    dens_Ham = Create_Dens_Ham(h, JXY, JZ, N, d)
+    
+    dens_im_TimeOp = Create_TimeOp(dens_Ham, im_dt, N, d**2, use_CN)
+    dens_TimeOp = Create_TimeOp(dens_Ham, dt, N, d**2, use_CN)
+    
+    Diss_arr = Create_Diss_Array(s_coup, d)
+    Diss_arr = Calculate_Diss_TimeOp(Diss_arr, dt, d, use_CN)
+    
+    NORM_state = create_maxmixed_normstate()
 
-new_main()
+    desired_expectations = []
+    desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), False, 0))
+    
+    DENS1.time_evolution(dens_TimeOp, Diss_arr, normalize, Diss_bool, dt, steps, desired_expectations)
+
+    final_Sz = np.zeros(N)
+    for i in range(N):
+        final_Sz[i] = DENS1.expval(np.kron(Sz, np.eye(d)), True, i)
+    plt.plot(final_Sz, linestyle="", marker=".")
+    plt.show()
+    
+    pass
+
+main()
 
 
 
 
-test = np.zeros(N)
-for i in range(N):
-    test[i] = DENS1.expval(np.kron(Sz, np.eye(d)), True, i)
-plt.plot(test, linestyle="", marker=".")
-plt.show()
 
 
 
@@ -608,19 +543,6 @@ print(c)
 DENS1 = create_superket(MPS1, newchi)
 d =DENS1.calculate_vidal_inner(NORM_state)
 print(d)
-
-"""
-sz_test_s = MPS1.expval(Sz, True, 1)
-sz_test_d1 = DENS1.expval(np.kron(Sz, np.eye(d)), True, 1)
-del(DENS1)
-DENS1 = create_superket(MPS1)
-sz_test_d2 = DENS1.expval(np.kron(Sz, np.eye(d)), True, 1)
-
-print()
-print(sz_test_s)
-print(sz_test_d1)
-print(sz_test_d2)
-"""
 
 
 
