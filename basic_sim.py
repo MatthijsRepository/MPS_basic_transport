@@ -605,14 +605,14 @@ newchi=40   #DENS truncation parameter
 
 #### Hamiltonian and Lindblad constants
 h=0
-JXY=1
+JXY=0#1
 JZ=1
 s_coup = 1
 
 #### Simulation variables
 im_steps = 0
 im_dt = -0.03j
-steps=20
+steps=450
 dt = 0.01
 normalize = True
 use_CN = False #choose if you want to use Crank-Nicolson approximation
@@ -636,62 +636,37 @@ MUST LOOK INTO: continued use of locsize even as entanglement in system grows?
 
 
 ####################################################################################
-#### Initializing simulation tools
-
-###############
-#### Simulation
-
-
-
-
-
 
 #temp = np.zeros((d,chi,chi))
 #temp[0,0,0] = np.sqrt(4/5)
 #temp[1,0,0] = 1/np.sqrt(5)
 #MPS1.set_Gamma_singlesite(1, temp)
 
-
-Operator1 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, is_density=True, Diss_bool=True, use_CN=False)
-Operator2 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, is_density=False, Diss_bool=True, use_CN=False)
-
-
-#main()
-
 def main():
     MPS1 = MPS(1, N,d,chi, False)
     MPS1.initialize_halfstate()
     #MPS1.initialize_flipstate()
     #MPS1.initialize_up_or_down(False)
-
     
     DENS1 = create_superket(MPS1, newchi)
-
-    Ham = Create_Ham(h, JXY, JZ, N, d)
-    dens_Ham = Create_Dens_Ham(h, JXY, JZ, N, d)
-    
-    dens_im_TimeOp = Create_TimeOp(dens_Ham, im_dt, N, d**2, use_CN)
-    dens_TimeOp = Create_TimeOp(dens_Ham, dt, N, d**2, use_CN)
-    
-    Diss_arr = Create_Diss_Array(s_coup, d)
-    Diss_arr = Calculate_Diss_TimeOp(Diss_arr, dt, d, use_CN)
-    
-    
-    
     NORM_state = create_maxmixed_normstate()
+
+    TimeOp1 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, is_density=True, Diss_bool=True, use_CN=False)
 
     desired_expectations = []
     desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), False, 0))
     
-    #DENS1.time_evolution(dens_TimeOp, Diss_arr, normalize, Diss_bool, dt, steps, desired_expectations)
-    DENS1.time_evolution_new(Operator1, normalize, steps, desired_expectations)
+    DENS1.time_evolution_new(TimeOp1, normalize, steps, desired_expectations)
     
     final_Sz = np.zeros(N)
     for i in range(N):
         final_Sz[i] = DENS1.expval(np.kron(Sz, np.eye(d)), True, i)
     plt.plot(final_Sz, linestyle="", marker=".")
+    plt.xlabel("Site")
+    plt.ylabel("<Sz>")
+    plt.grid()
+    plt.title(f"<Sz> for each site after {steps} steps with dt={dt}")
     plt.show()
-    
     pass
 
 main()
