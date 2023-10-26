@@ -222,6 +222,24 @@ class MPS:
             result[i] = np.real(np.tensordot(np.conj(theta_prime),theta,axes=([0,1,2],[0,2,1])))
         return result
     
+    def expval_twosite(self, Op, site):
+# =============================================================================
+#         """ Calculates expectation value of a twosite operator """
+#         temp_MPS = MPS(None, self.N, self.d, self.chi, self.is_density)
+#         temp_MPS.set_Gamma_Lambda(self.gammas, self.lambdas, self.locsize)  #Duplicate MPS
+#         temp_MPS.apply_twosite(TimeOp, i, normalize)
+# =============================================================================
+        theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,1))  #(chi, chi, d) -> (chi, d, chi)
+        theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(2,0)) #(chi, d, chi) 
+        theta = np.tensordot(theta, self.Gamma_mat[site+1,:,:,:],axes=(2,1)) #(chi, d, chi, d) -> (chi,d,d,chi)
+        theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+2,:]), axes=(3,0)) #(chi, d, d, chi)
+        Op = np.reshape(Op, (self.d,self.d,self.d,self.d))
+        theta_prime = np.tensordot(theta, Op,axes=([1,2],[2,3])) #(chi,chi,d,d)  
+        result = np.tensordot(np.conj(theta_prime),theta, axes=([0,1,2,3],[0,3,1,2]))
+        return np.real(result)
+        
+        
+    
     def calculate_vidal_norm(self):
         """ Calculates the norm of the MPS """
         m_total = np.eye(chi)
@@ -255,8 +273,7 @@ class MPS:
         Normalization = np.zeros(steps)
         
         for t in range(steps):
-            if (t%10==0):
-                print()
+            if (t%20==0):
                 print(t)
                 #print(self.calculate_vidal_inner(NORM_state))
             self.TEBD(TimeOp, Diss_arr, normalize, Diss_bool)
@@ -415,11 +432,11 @@ class Time_Operator:
         Diss_arr["index"][0] = 0
         Diss_arr["Operator"][0,:,:] = self.Calculate_Diss_site(np.sqrt(2*s_coup)*Sp)
     
-        Diss_arr["index"][1] = N-1
-        Diss_arr["Operator"][1,:,:] = self.Calculate_Diss_site(np.sqrt(2*s_coup)*np.eye(self.d))
-    
         #Diss_arr["index"][1] = N-1
-        #Diss_arr["Operator"][1,:,:] = self.Calculate_Diss_site(np.sqrt(2*s_coup)*Sm)
+        #Diss_arr["Operator"][1,:,:] = self.Calculate_Diss_site(np.sqrt(2*s_coup)*np.eye(self.d))
+    
+        Diss_arr["index"][1] = N-1
+        Diss_arr["Operator"][1,:,:] = self.Calculate_Diss_site(np.sqrt(2*s_coup)*Sm)
         return Diss_arr
     
     def Calculate_Diss_TimeOp(self, dt, use_CN):
@@ -475,7 +492,7 @@ t0 = time.time()
 N=4
 d=2
 chi=10       #MPS truncation parameter
-newchi=16   #DENS truncation parameter
+newchi=8   #DENS truncation parameter
 
 #### Hamiltonian and Lindblad constants
 h=0
@@ -486,7 +503,7 @@ s_coup = 1
 #### Simulation variables
 im_steps = 0
 im_dt = -0.03j
-steps=1000
+steps=10
 dt = 0.01
 normalize = False
 use_CN = False #choose if you want to use Crank-Nicolson approximation
@@ -528,14 +545,13 @@ def main():
     DENS1 = create_superket(MPS1, newchi)
 
 
-
     TimeOp1 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, is_density=True, Diss_bool=True, use_CN=False)
 
     desired_expectations = []
     desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), False, 0))
     
     DENS1.time_evolution(TimeOp1, normalize, steps, desired_expectations)
-    
+    """
     final_Sz = np.zeros(N)
     for i in range(N):
         final_Sz[i] = DENS1.expval(np.kron(Sz, np.eye(d)), True, i)
@@ -545,6 +561,7 @@ def main():
     plt.grid()
     plt.title(f"<Sz> for each site after {steps} steps with dt={dt}")
     plt.show()
+    """        
     pass
 
 main()
