@@ -223,12 +223,7 @@ class MPS:
         return result
     
     def expval_twosite(self, Op, site):
-# =============================================================================
-#         """ Calculates expectation value of a twosite operator """
-#         temp_MPS = MPS(None, self.N, self.d, self.chi, self.is_density)
-#         temp_MPS.set_Gamma_Lambda(self.gammas, self.lambdas, self.locsize)  #Duplicate MPS
-#         temp_MPS.apply_twosite(TimeOp, i, normalize)
-# =============================================================================
+        """ Calculates expectation value for a twosite operator Op at sites site and site+1 """
         theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,1))  #(chi, chi, d) -> (chi, d, chi)
         theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(2,0)) #(chi, d, chi) 
         theta = np.tensordot(theta, self.Gamma_mat[site+1,:,:,:],axes=(2,1)) #(chi, d, chi, d) -> (chi,d,d,chi)
