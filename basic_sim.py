@@ -242,36 +242,8 @@ class MPS:
             m_total = np.tensordot(m_total,mp,axes=([0,1],[0,2]))    
         return abs(m_total[0,0])
     
-    def time_evolution(self, TimeOp, Diss_arr, normalize, Diss_bool, timestep, steps, desired_expectations):
-        """ Time evolution method of the MPS """
-        if (self.is_density==False): #If MPS is a purestate then Diss_bool must be False
-            Diss_bool = False
-
-        exp_values = np.ones((len(desired_expectations), self.N, steps)) #array to store expectation values in
-        
-        for t in range(steps):
-            if (t%10==0):
-                print(t)
-            self.TEBD(TimeOp, Diss_arr, normalize, Diss_bool)
-            for i in range(len(desired_expectations)):
-                exp_values[i,:,t] *= self.expval(desired_expectations[i][1], desired_expectations[i][2], desired_expectations[i][3])
-        
-        time_axis = np.arange(steps)*abs(timestep)
-        for i in range(len(desired_expectations)):
-            if desired_expectations[i][2]==False:
-                for j in range(self.N):
-                    plt.plot(time_axis, exp_values[i,j,:], label=f"Site {j}")
-            else:
-                plt.plot(time_axis, exp_values[i,0,:], label=f"Site {desired_expectations[i][3]}")
-            plt.xlabel("Time")
-            plt.ylabel(f"<{desired_expectations[i][0]}>")
-            plt.legend()
-            plt.title(f"Plot of <{desired_expectations[i][0]}> of {self.name} over time")
-            plt.grid()
-            plt.show()
-        return
     
-    def time_evolution_new(self, Time_Evol_Op, normalize, steps, desired_expectations):
+    def time_evolution(self, Time_Evol_Op, normalize, steps, desired_expectations):
         if Time_Evol_Op.is_density != self.is_density:
             print("Error: time evolution operator type does not match state type (MPS/DENS)")
             return
@@ -280,15 +252,21 @@ class MPS:
         TimeOp = Time_Evol_Op.TimeOp
         Diss_arr = Time_Evol_Op.Diss_arr
         Diss_bool = Time_Evol_Op.Diss_bool
+        Normalization = np.zeros(steps)
         
         for t in range(steps):
             if (t%10==0):
+                print()
                 print(t)
+                #print(self.calculate_vidal_inner(NORM_state))
             self.TEBD(TimeOp, Diss_arr, normalize, Diss_bool)
+            Normalization[t] = self.calculate_vidal_inner(NORM_state)
             for i in range(len(desired_expectations)):
                 exp_values[i,:,t] *= self.expval(desired_expectations[i][1], desired_expectations[i][2], desired_expectations[i][3])
         
         time_axis = np.arange(steps)*abs(Time_Evol_Op.dt)
+        plt.plot(Normalization)
+        plt.show()
         for i in range(len(desired_expectations)):
             if desired_expectations[i][2]==False:
                 for j in range(self.N):
@@ -382,7 +360,7 @@ class Time_Operator:
             H_arr[i, 0,:,:] = H_L
             H_arr[i, self.N-2,:,:] = H_R
         
-        return H_arr[0] - H_arr[1]     ######## We do not take the Hermitian conjugate into account, since H is Hermitian this has no effect
+        return H_arr[0] - np.conj(H_arr[1])     ######## We do not take the Hermitian conjugate into account, since H is Hermitian this has no effect
 
     def Create_TimeOp(self, dt, use_CN):
         if self.is_density:
@@ -391,9 +369,9 @@ class Time_Operator:
             U = np.ones((self.N-1, self.d**2, self.d**2), dtype=complex)
         
         if use_CN:
-            U[0,:,:] = create_crank_nicolson(self.Ham[0], dt)
-            U[self.N-2,:,:] = create_crank_nicolson(self.Ham[self.N-2], dt)
-            U[1:self.N-2,:,:] *= create_crank_nicolson(self.Ham[1], dt) # we use broadcasting
+            U[0,:,:] = self.create_crank_nicolson(self.Ham[0], dt)
+            U[self.N-2,:,:] = self.create_crank_nicolson(self.Ham[self.N-2], dt)
+            U[1:self.N-2,:,:] *= self.create_crank_nicolson(self.Ham[1], dt) # we use broadcasting
         else:
             U[0,:,:] = expm(-1j*dt*self.Ham[0])
             U[self.N-2,:,:] = expm(-1j*dt*self.Ham[self.N-2])
@@ -435,17 +413,20 @@ class Time_Operator:
             ])
         
         Diss_arr["index"][0] = 0
-        Diss_arr["Operator"][0,:,:] = Calculate_Diss_site(np.sqrt(2*s_coup)*Sp, self.d)
+        Diss_arr["Operator"][0,:,:] = self.Calculate_Diss_site(np.sqrt(2*s_coup)*Sp)
     
         Diss_arr["index"][1] = N-1
-        Diss_arr["Operator"][1,:,:] = Calculate_Diss_site(np.sqrt(2*s_coup)*Sm, self.d)
+        Diss_arr["Operator"][1,:,:] = self.Calculate_Diss_site(np.sqrt(2*s_coup)*np.eye(self.d))
+    
+        #Diss_arr["index"][1] = N-1
+        #Diss_arr["Operator"][1,:,:] = self.Calculate_Diss_site(np.sqrt(2*s_coup)*Sm)
         return Diss_arr
     
     def Calculate_Diss_TimeOp(self, dt, use_CN):
         """ Calculates the dissipative time evolution operators """
         for i in range(len(self.Diss_arr["index"])):
             if use_CN:
-                temp = create_crank_nicolson(self.Diss_arr["Operator"][i], dt)
+                temp = self.create_crank_nicolson(self.Diss_arr["Operator"][i], dt)
             else:
                 temp = expm(dt*self.Diss_arr["Operator"][i])
             temp = np.around(temp, decimals=15)    #Rounding out very low decimals 
@@ -454,113 +435,6 @@ class Time_Operator:
 
 
 
-def Create_Ham(h, JXY, JZ, N, d):
-    SX = np.kron(Sx, Sx)
-    SY = np.kron(Sy, Sy)
-    SZ = np.kron(Sz, Sz)
-    SZ_L = np.kron(Sz, np.eye(2))
-    SZ_R = np.kron(np.eye(2), Sz)
-    SZ_M = (SZ_L + SZ_R)
-    
-    H_L = h*(SZ_L + SZ_R/2) + JXY*(SX + SY) + JZ*SZ
-    H_R = h*(SZ_L/2 + SZ_R) + JXY*(SX + SY) + JZ*SZ
-    H_M = h*SZ_M/2 + JXY*(SX + SY) + JZ*SZ
-    
-    H_arr = np.ones((N-1, d**2, d**2), dtype=complex)
-    
-    H_arr[1:N-2,:,:] *= H_M
-    H_arr[0,:,:] = H_L
-    H_arr[N-2,:,:] = H_R
-    return H_arr
-    
-
-def Create_Dens_Ham(h, JXY, JZ, N, d):
-    Sx_arr = np.array([np.kron(Sx, np.eye(d)) , np.kron(np.eye(d), Sx)])
-    Sy_arr = np.array([np.kron(Sy, np.eye(d)) , np.kron(np.eye(d), Sy)])
-    Sz_arr = np.array([np.kron(Sz, np.eye(d)) , np.kron(np.eye(d), Sz)])
-     
-    H_arr = np.ones((2, N-1, d**4, d**4), dtype=complex)
-    for i in range(2):
-        SX = np.kron(Sx_arr[i], Sx_arr[i])
-        SY = np.kron(Sy_arr[i], Sy_arr[i])
-        SZ = np.kron(Sz_arr[i], Sz_arr[i])
-        SZ_L = np.kron(Sz_arr[i], np.eye(d**2))
-        SZ_R = np.kron(np.eye(d**2), Sz_arr[i])
-        SZ_M = (SZ_L + SZ_R)
-        
-        H_L = h*(SZ_L + SZ_R/2) + JXY*(SX + SY) + JZ*SZ
-        H_R = h*(SZ_L/2 + SZ_R) + JXY*(SX + SY) + JZ*SZ
-        H_M = h*SZ_M/2 + JXY*(SX + SY) + JZ*SZ
-   
-        H_arr[i, 1:N-2,:,:] *= H_M
-        H_arr[i, 0,:,:] = H_L
-        H_arr[i, N-2,:,:] = H_R
-    
-    return H_arr[0] - H_arr[1]     ######## We do not take the Hermitian conjugate into account, since H is Hermitian this has no effect
-
-
-
-def Calculate_Diss_site(L_Op, d):
-    """ Creates the dissipative term for a single site """
-    """ L_Op is shape (k,d,d) or (d,d) -- the k-index is in case multiple different lindblad operators act on a single site """
-    if L_Op.ndim==2:
-        Diss = np.kron(L_Op, np.conj(L_Op))
-        Diss -= 1/2* np.kron(np.matmul(np.conj(np.transpose(L_Op)), L_Op), np.eye(d))
-        Diss -= 1/2* np.kron(np.eye(d), np.matmul(np.transpose(L_Op), np.conj(L_Op)))
-    else:
-        Diss = np.zeros((d**2, d**2), dtype=complex)
-        for i in range(np.shape(L_Op)[0]):
-            Diss += np.kron(L_Op[i], np.conj(L_Op[i]))
-            Diss -= 1/2* np.kron(np.matmul(np.conj(np.transpose(L_Op[i])), L_Op[i]), np.eye(d))
-            Diss -= 1/2* np.kron(np.eye(d), np.matmul(np.transpose(L_Op[i]), np.conj(L_Op[i])))
-    return Diss
-
-def Create_Diss_Array(s_coup, d):
-    """ Creates the array containing dissipative term, where 'index' stores the site the corresponding Lindblad operators couple to """
-    Diss_arr = np.zeros((), dtype=[
-        ("index", int, 2),
-        ("Operator", complex, (2, d**2, d**2)),
-        ("TimeOp", complex, (2, d**2, d**2))
-        ])
-    
-    Diss_arr["index"][0] = 0
-    Diss_arr["Operator"][0,:,:] = Calculate_Diss_site(np.sqrt(2*s_coup)*Sp, d)
-
-    Diss_arr["index"][1] = N-1
-    Diss_arr["Operator"][1,:,:] = Calculate_Diss_site(np.sqrt(2*s_coup)*Sm, d)
-    return Diss_arr
-
-def Calculate_Diss_TimeOp(Diss_arr, dt, d, use_CN):
-    """ Calculates the dissipative time evolution operators """
-    for i in range(len(Diss_arr["index"])):
-        if use_CN:
-            temp = create_crank_nicolson(Diss_arr["Operator"][i], dt)
-        else:
-            temp = expm(dt*Diss_arr["Operator"][i])
-        temp = np.around(temp, decimals=15)    #Rounding out very low decimals 
-        Diss_arr["TimeOp"][i,:,:] = temp
-    return Diss_arr
-
-def Create_TimeOp(H, dt, N, d, use_CN):
-    #H = np.reshape(H, (N-1, d**2, d**2))
-    U = np.ones((N-1, d**2, d**2), dtype=complex)
-    
-    if use_CN:
-        U[0,:,:] = create_crank_nicolson(H[0], dt)
-        U[N-2,:,:] = create_crank_nicolson(H[N-2], dt)
-        U[1:N-2,:,:] *= create_crank_nicolson(H[1], dt) # we use broadcasting
-    else:
-        U[0,:,:] = expm(-1j*dt*H[0])
-        U[N-2,:,:] = expm(-1j*dt*H[N-2])
-        U[1:N-2,:,:] *= expm(-1j*dt*H[1]) # we use broadcasting
-
-    U = np.around(U, decimals=15)        #Rounding out very low decimals 
-    return np.reshape(U, (N-1,d,d,d,d)) 
-
-def create_crank_nicolson(H, dt):
-    H_top=np.eye(H.shape[0])-1j*dt*H/2
-    H_bot=np.eye(H.shape[0])+1j*dt*H/2
-    return np.linalg.inv(H_bot).dot(H_top)
 
 def create_superket(State, newchi):
     """ create MPS of the density matrix of a given MPS """
@@ -598,23 +472,23 @@ def create_maxmixed_normstate():
 ####################################################################################
 t0 = time.time()
 #### MPS constants
-N=10
+N=4
 d=2
 chi=10       #MPS truncation parameter
-newchi=40   #DENS truncation parameter
+newchi=16   #DENS truncation parameter
 
 #### Hamiltonian and Lindblad constants
 h=0
-JXY=0#1
-JZ=1
+JXY=1#1
+JZ=1.5
 s_coup = 1
 
 #### Simulation variables
 im_steps = 0
 im_dt = -0.03j
-steps=450
+steps=1000
 dt = 0.01
-normalize = True
+normalize = False
 use_CN = False #choose if you want to use Crank-Nicolson approximation
 Diss_bool = True
 
@@ -624,6 +498,9 @@ Sm = np.array([[0,0],[1,0]])
 Sx = np.array([[0,1], [1,0]])
 Sy = np.array([[0,-1j], [1j,0]])
 Sz = np.array([[1,0],[0,-1]])
+
+
+NORM_state = create_maxmixed_normstate()
 
 ####################################################################################
 
@@ -649,14 +526,15 @@ def main():
     #MPS1.initialize_up_or_down(False)
     
     DENS1 = create_superket(MPS1, newchi)
-    NORM_state = create_maxmixed_normstate()
+
+
 
     TimeOp1 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, is_density=True, Diss_bool=True, use_CN=False)
 
     desired_expectations = []
     desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), False, 0))
     
-    DENS1.time_evolution_new(TimeOp1, normalize, steps, desired_expectations)
+    DENS1.time_evolution(TimeOp1, normalize, steps, desired_expectations)
     
     final_Sz = np.zeros(N)
     for i in range(N):
