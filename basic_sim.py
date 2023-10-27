@@ -134,7 +134,7 @@ class MPS:
     
     def apply_singlesite(self, TimeOp, i, normalize):
         """ Applies a single-site operator to site i """
-        theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:,:], axes=(1,1))  #(chi, chi, d) -> (chi, d, chi)
+        theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,1))  #(chi, chi, d) -> (chi, d, chi)
         theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(2,0)) #(chi, d, chi) 
         theta_prime = np.tensordot(theta, TimeOp, axes=(1,1)) #(chi, chi, d)
         if normalize:
@@ -495,10 +495,10 @@ def create_maxmixed_normstate():
 ####################################################################################
 t0 = time.time()
 #### MPS constants
-N=18
+N=4
 d=2
 chi=10       #MPS truncation parameter
-newchi=25   #DENS truncation parameter
+newchi=10   #DENS truncation parameter
 
 #### Hamiltonian and Lindblad constants
 h=0
@@ -551,7 +551,7 @@ def main():
     #MPS1.initialize_flipstate()
     #MPS1.initialize_up_or_down(False)
     
-    #DENS1 = create_superket(MPS1, newchi)
+    DENS1 = create_superket(MPS1, newchi)
 
 
     TimeOp1 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, is_density=True, Diss_bool=True, use_CN=False)
