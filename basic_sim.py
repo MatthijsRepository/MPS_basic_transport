@@ -134,7 +134,7 @@ class MPS:
     
     def apply_singlesite(self, TimeOp, i, normalize):
         """ Applies a single-site operator to site i """
-        theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,1))  #(chi, chi, d) -> (chi, d, chi)
+        theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:,:], axes=(1,1))  #(chi, chi, d) -> (chi, d, chi)
         theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(2,0)) #(chi, d, chi) 
         theta_prime = np.tensordot(theta, TimeOp, axes=(1,1)) #(chi, chi, d)
         if normalize:
@@ -233,7 +233,6 @@ class MPS:
         result = np.tensordot(np.conj(theta_prime),theta, axes=([0,1,2,3],[0,3,1,2]))
         return np.real(result)
         
-        
     
     def calculate_vidal_norm(self):
         """ Calculates the norm of the MPS """
@@ -262,6 +261,10 @@ class MPS:
             return
         exp_values = np.ones((len(desired_expectations), self.N, steps)) #array to store expectation values in
         
+        current_cutoff=1100
+        if steps>current_cutoff:
+            spin_current_values = np.zeros(steps-current_cutoff)
+        
         TimeOp = Time_Evol_Op.TimeOp
         Diss_arr = Time_Evol_Op.Diss_arr
         Diss_bool = Time_Evol_Op.Diss_bool
@@ -275,6 +278,9 @@ class MPS:
             Normalization[t] = self.calculate_vidal_inner(NORM_state)
             for i in range(len(desired_expectations)):
                 exp_values[i,:,t] *= self.expval(desired_expectations[i][1], desired_expectations[i][2], desired_expectations[i][3])
+        
+            if (t>current_cutoff and Diss_bool==True):
+                spin_current_values[t-current_cutoff] = self.expval_twosite(spin_current_op, round(self.N/2))
         
         time_axis = np.arange(steps)*abs(Time_Evol_Op.dt)
         plt.plot(Normalization)
@@ -291,6 +297,11 @@ class MPS:
             plt.title(f"Plot of <{desired_expectations[i][0]}> of {self.name} over time")
             plt.grid()
             plt.show()
+        
+        
+        print("Time averaged spin current through middle site:")
+        print(2*(np.average(spin_current_values)))
+        
         return
 
 ########################################################################################  
@@ -484,21 +495,21 @@ def create_maxmixed_normstate():
 ####################################################################################
 t0 = time.time()
 #### MPS constants
-N=4
+N=18
 d=2
 chi=10       #MPS truncation parameter
-newchi=8   #DENS truncation parameter
+newchi=25   #DENS truncation parameter
 
 #### Hamiltonian and Lindblad constants
 h=0
 JXY=1#1
-JZ=1.5
+JZ=1
 s_coup = 1
 
 #### Simulation variables
 im_steps = 0
 im_dt = -0.03j
-steps=10
+steps=4000
 dt = 0.01
 normalize = False
 use_CN = False #choose if you want to use Crank-Nicolson approximation
@@ -513,6 +524,9 @@ Sz = np.array([[1,0],[0,-1]])
 
 
 NORM_state = create_maxmixed_normstate()
+
+#Operator for calculating spin current from Prosen 2009.
+spin_current_op = np.kron( np.kron(Sx, np.eye(d)) , np.kron(Sy, np.eye(d))) - np.kron( np.kron(Sy, np.eye(d)) , np.kron(Sx, np.eye(d)))
 
 ####################################################################################
 
@@ -537,7 +551,7 @@ def main():
     #MPS1.initialize_flipstate()
     #MPS1.initialize_up_or_down(False)
     
-    DENS1 = create_superket(MPS1, newchi)
+    #DENS1 = create_superket(MPS1, newchi)
 
 
     TimeOp1 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, is_density=True, Diss_bool=True, use_CN=False)
@@ -546,7 +560,7 @@ def main():
     desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), False, 0))
     
     DENS1.time_evolution(TimeOp1, normalize, steps, desired_expectations)
-    """
+
     final_Sz = np.zeros(N)
     for i in range(N):
         final_Sz[i] = DENS1.expval(np.kron(Sz, np.eye(d)), True, i)
@@ -555,8 +569,7 @@ def main():
     plt.ylabel("<Sz>")
     plt.grid()
     plt.title(f"<Sz> for each site after {steps} steps with dt={dt}")
-    plt.show()
-    """        
+    plt.show()       
     pass
 
 main()
@@ -565,7 +578,9 @@ main()
 
 
 
-
+#####
+# N_list = [5, 10]
+# J_list = [0.3342275264055715, 0.2090220151776465]
 
 
 
