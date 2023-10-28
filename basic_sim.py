@@ -210,12 +210,11 @@ class MPS:
         theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
         theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
         theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d)
+        
         if self.is_density:     #In case of density matrices we must take the trace
-            #theta_I = NORM_state.singlesite_thetas
-            theta_I = np.tensordot(np.diag(NORM_state.Lambda_mat[site,:]), NORM_state.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
-            theta_I = np.tensordot(theta_I,np.diag(NORM_state.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
-            print(site)
-            print(theta_I)
+            theta_I = NORM_state.singlesite_thetas
+            #theta_I = np.tensordot(np.diag(NORM_state.Lambda_mat[site,:]), NORM_state.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
+            #theta_I = np.tensordot(theta_I,np.diag(NORM_state.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
             return np.real(np.tensordot(theta_prime, theta_I, axes=([0,1,2],[0,2,1])))
         else:
             result = np.tensordot(theta_prime, np.conj(theta), axes=([0,1,2],[0,2,1]))
@@ -577,7 +576,6 @@ MUST LOOK INTO: continued use of locsize even as entanglement in system grows?
 """ 
 
 NORM_state.singlesite_thetas = calculate_thetas_singlesite(NORM_state)
-print(NORM_state.singlesite_thetas)
 NORM_state.twosite_thetas = calculate_thetas_twosite(NORM_state)
 
 
@@ -605,7 +603,7 @@ def main():
     
     desired_expectations = []
     #desired_expectations.append(("I", np.eye(d**2), False, 0))
-    desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), True, 0))
+    desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), False, 0))
     
     
     DENS1.time_evolution(TimeOp1, normalize, steps, desired_expectations)
