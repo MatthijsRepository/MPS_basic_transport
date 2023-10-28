@@ -211,7 +211,7 @@ class MPS:
             theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
             theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
             theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d)
-            result = np.tensordot(np.conj(theta_prime),theta,axes=([0,1,2],[0,2,1]))
+            result = np.tensordot(theta_prime, np.conj(theta),axes=([0,1,2],[0,2,1]))
             return np.real(result)
  
         result = np.zeros(self.N)      #calculate expval for entire chain
@@ -219,8 +219,31 @@ class MPS:
             theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,1)) #(chi, d, chi)
             theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(2,0)) #(chi,d,chi)
             theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d) 
-            result[i] = np.real(np.tensordot(np.conj(theta_prime),theta,axes=([0,1,2],[0,2,1])))
+            result[i] = np.real(np.tensordot(theta_prime, np.conj(theta),axes=([0,1,2],[0,2,1])))
         return result
+    
+    def expval_dens(self, Op, singlesite, site):
+        """ applies the operator and takes trace """
+        if singlesite:
+            theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
+            theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
+            theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d)
+            
+            theta_I = np.tensordot(np.diag(NORM_state.Lambda_mat[site,:]), NORM_state.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
+            theta_I = np.tensordot(theta,np.diag(NORM_state.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
+            return np.real(np.tensordot(theta_prime,np.conj(theta_I),axes=([0,1,2],[0,2,1])))
+    
+        else:
+            result = np.zeros(self.N)      #calculate expval for entire chain
+            for i in range(self.N):
+                theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,1)) #(chi, d, chi)
+                theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(2,0)) #(chi,d,chi)
+                theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d)
+                
+                theta_I = np.tensordot(np.diag(NORM_state.Lambda_mat[i,:]), NORM_state.Gamma_mat[i,:,:,:], axes=(1,1)) #(chi, d, chi)
+                theta_I = np.tensordot(theta_I,np.diag(NORM_state.Lambda_mat[i+1,:]),axes=(2,0)) #(chi,d,chi)
+                result[i] = np.real(np.tensordot(theta_prime, np.conj(theta_I),axes=([0,1,2],[0,2,1])))
+            return result
     
     def expval_twosite(self, Op, site):
         """ Calculates expectation value for a twosite operator Op at sites site and site+1 """
@@ -230,7 +253,7 @@ class MPS:
         theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+2,:]), axes=(3,0)) #(chi, d, d, chi)
         Op = np.reshape(Op, (self.d,self.d,self.d,self.d))
         theta_prime = np.tensordot(theta, Op,axes=([1,2],[2,3])) #(chi,chi,d,d)  
-        result = np.tensordot(np.conj(theta_prime),theta, axes=([0,1,2,3],[0,3,1,2]))
+        result = np.tensordot(theta_prime, np.conj(theta), axes=([0,1,2,3],[0,3,1,2]))
         return np.real(result)
         
     
@@ -260,8 +283,8 @@ class MPS:
             print("Error: time evolution operator type does not match state type (MPS/DENS)")
             return
         exp_values = np.ones((len(desired_expectations), self.N, steps)) #array to store expectation values in
-        
-        current_cutoff=1100
+        exp_values_DENS_method = np.ones((len(desired_expectations), self.N, steps))
+
         if steps>current_cutoff:
             spin_current_values = np.zeros(steps-current_cutoff)
         
@@ -274,11 +297,13 @@ class MPS:
             if (t%20==0):
                 print(t)
                 #print(self.calculate_vidal_inner(NORM_state))
-            self.TEBD(TimeOp, Diss_arr, normalize, Diss_bool)
-            Normalization[t] = self.calculate_vidal_inner(NORM_state)
             for i in range(len(desired_expectations)):
                 exp_values[i,:,t] *= self.expval(desired_expectations[i][1], desired_expectations[i][2], desired_expectations[i][3])
-        
+                exp_values_DENS_method[i,:,t] *= self.expval_dens(desired_expectations[i][1], desired_expectations[i][2], desired_expectations[i][3])
+            
+            self.TEBD(TimeOp, Diss_arr, normalize, Diss_bool)
+            Normalization[t] = self.calculate_vidal_inner(NORM_state)
+            
             if (t>current_cutoff and Diss_bool==True):
                 spin_current_values[t-current_cutoff] = self.expval_twosite(spin_current_op, round(self.N/2))
         
@@ -291,6 +316,19 @@ class MPS:
                     plt.plot(time_axis, exp_values[i,j,:], label=f"Site {j}")
             else:
                 plt.plot(time_axis, exp_values[i,0,:], label=f"Site {desired_expectations[i][3]}")
+            plt.xlabel("Time")
+            plt.ylabel(f"<{desired_expectations[i][0]}>")
+            plt.legend()
+            plt.title(f"Plot of <{desired_expectations[i][0]}> of {self.name} over time")
+            plt.grid()
+            plt.show()
+            
+        for i in range(len(desired_expectations)):
+            if desired_expectations[i][2]==False:
+                for j in range(self.N):
+                    plt.plot(time_axis, exp_values_DENS_method[i,j,:], label=f"Site {j}")
+            else:
+                plt.plot(time_axis, exp_values_DENS_method[i,0,:], label=f"Site {desired_expectations[i][3]}")
             plt.xlabel("Time")
             plt.ylabel(f"<{desired_expectations[i][0]}>")
             plt.legend()
@@ -498,7 +536,9 @@ t0 = time.time()
 N=4
 d=2
 chi=10       #MPS truncation parameter
-newchi=10   #DENS truncation parameter
+newchi=16   #DENS truncation parameter
+
+
 
 #### Hamiltonian and Lindblad constants
 h=0
@@ -509,7 +549,10 @@ s_coup = 1
 #### Simulation variables
 im_steps = 0
 im_dt = -0.03j
-steps=4000
+
+steps=10
+current_cutoff=0 #<------
+
 dt = 0.01
 normalize = False
 use_CN = False #choose if you want to use Crank-Nicolson approximation
@@ -557,10 +600,12 @@ def main():
     TimeOp1 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, is_density=True, Diss_bool=True, use_CN=False)
 
     desired_expectations = []
-    desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), False, 0))
+    desired_expectations.append(("I", np.eye(d**2), False, 0))
+    #desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), False, 0))
     
     DENS1.time_evolution(TimeOp1, normalize, steps, desired_expectations)
-
+    
+    """
     final_Sz = np.zeros(N)
     for i in range(N):
         final_Sz[i] = DENS1.expval(np.kron(Sz, np.eye(d)), True, i)
@@ -569,7 +614,8 @@ def main():
     plt.ylabel("<Sz>")
     plt.grid()
     plt.title(f"<Sz> for each site after {steps} steps with dt={dt}")
-    plt.show()       
+    plt.show()    
+    """
     pass
 
 main()
