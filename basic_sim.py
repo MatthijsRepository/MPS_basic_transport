@@ -476,7 +476,6 @@ class Time_Operator:
 
 
 
-
 def create_superket(State, newchi):
     """ create MPS of the density matrix of a given MPS """
     ID = State.give_ID()
@@ -607,6 +606,11 @@ def main():
     
     
     DENS1.time_evolution(TimeOp1, normalize, steps, desired_expectations)
+    
+    print(DENS1.Gamma_mat[0,0])
+    print("AAA")
+    print(DENS1.Gamma_mat[0,3])
+    """CONCLUSION, it may be the change you did in "axes" a few days back, INVESTIGATE"""
     
     #desired_expectations_pure = []
     #desired_expectations_pure.append(("I", np.eye(d), False, 0))
