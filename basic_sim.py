@@ -205,7 +205,7 @@ class MPS:
         return
     
     
-    def expval_old(self, Op, singlesite, site):
+    def expval_old_old(self, Op, singlesite, site):
         """ Calculates the expectation value of an operator Op, either for a single site or for the entire chain """
         if singlesite:
             theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
@@ -222,13 +222,24 @@ class MPS:
             result[i] = np.real(np.tensordot(theta_prime, np.conj(theta),axes=([0,1,2],[0,2,1])))
         return result
     
+    
     def expval(self, Op, site):
         """ Calculates the expectation value of an operator Op for a single site """
-        theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
-        theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
-        theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d)
-        result = np.tensordot(theta_prime, np.conj(theta),axes=([0,1,2],[0,2,1]))
-        return np.real(result)
+        if self.is_density:     #In case of density matrices we must take the trace
+            theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
+            theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
+            theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d)
+            
+            theta_I = np.tensordot(np.diag(NORM_state.Lambda_mat[site,:]), NORM_state.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
+            theta_I = np.tensordot(theta,np.diag(NORM_state.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
+            return np.real(np.tensordot(theta_prime, np.conj(theta_I), axes=([0,1,2],[0,2,1])))
+        else:
+            theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
+            theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
+            theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d)
+            result = np.tensordot(theta_prime, np.conj(theta), axes=([0,1,2],[0,2,1]))
+            return np.real(result)
+    
     
     def expval_chain(self, Op):
         """ calculates expectation value for operator Op for the entire chain """
@@ -237,45 +248,6 @@ class MPS:
             result[i] = self.expval(Op, i)
         return result
         
-    def expval_dens(self, Op, site):
-        """ applies the operator and takes trace """
-        theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
-        theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
-        theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d)
-        
-        theta_I = np.tensordot(np.diag(NORM_state.Lambda_mat[site,:]), NORM_state.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
-        theta_I = np.tensordot(theta,np.diag(NORM_state.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
-        return np.real(np.tensordot(theta_prime,np.conj(theta_I),axes=([0,1,2],[0,2,1])))
-    
-    def expval_dens_chain(self, Op):
-        """ calculates expectation value for operator Op for the entire chain, using trace """
-        result = np.zeros(self.N)
-        for i in range(self.N):
-            result[i] = self.expval_dens(Op, i)
-        return result
-    
-    def expval_dens_old(self, Op, singlesite, site):
-        """ applies the operator and takes trace """
-        if singlesite:
-            theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
-            theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
-            theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d)
-            
-            theta_I = np.tensordot(np.diag(NORM_state.Lambda_mat[site,:]), NORM_state.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
-            theta_I = np.tensordot(theta,np.diag(NORM_state.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
-            return np.real(np.tensordot(theta_prime,np.conj(theta_I),axes=([0,1,2],[0,2,1])))
-    
-        else:
-            result = np.zeros(self.N)      #calculate expval for entire chain
-            for i in range(self.N):
-                theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,1)) #(chi, d, chi)
-                theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(2,0)) #(chi,d,chi)
-                theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d)
-                
-                theta_I = np.tensordot(np.diag(NORM_state.Lambda_mat[i,:]), NORM_state.Gamma_mat[i,:,:,:], axes=(1,1)) #(chi, d, chi)
-                theta_I = np.tensordot(theta_I,np.diag(NORM_state.Lambda_mat[i+1,:]),axes=(2,0)) #(chi,d,chi)
-                result[i] = np.real(np.tensordot(theta_prime, np.conj(theta_I),axes=([0,1,2],[0,2,1])))
-            return result
     
     def expval_twosite(self, Op, site):
         """ Calculates expectation value for a twosite operator Op at sites site and site+1 """
@@ -315,7 +287,6 @@ class MPS:
             print("Error: time evolution operator type does not match state type (MPS/DENS)")
             return
         exp_values = np.ones((len(desired_expectations), self.N, steps)) #array to store expectation values in
-        exp_values_DENS_method = np.ones((len(desired_expectations), self.N, steps))
 
         if steps>current_cutoff:
             spin_current_values = np.zeros(steps-current_cutoff)
@@ -328,17 +299,12 @@ class MPS:
         for t in range(steps):
             if (t%20==0):
                 print(t)
-                #print(self.calculate_vidal_inner(NORM_state))
             for i in range(len(desired_expectations)):
                 if desired_expectations[i][2] == True:
                     exp_values[i,:,t] *= self.expval(desired_expectations[i][1], desired_expectations[i][3])
-                    exp_values_DENS_method[i,:,t] *= self.expval_dens(desired_expectations[i][1], desired_expectations[i][3])
                 else:
                     exp_values[i,:,t] *= self.expval_chain(desired_expectations[i][1])
-                    exp_values_DENS_method[i,:,t] *= self.expval_dens_chain(desired_expectations[i][1])
-                
-                
-            
+                    
             self.TEBD(TimeOp, Diss_arr, normalize, Diss_bool)
             Normalization[t] = self.calculate_vidal_inner(NORM_state)
             
@@ -360,20 +326,7 @@ class MPS:
             plt.title(f"Plot of <{desired_expectations[i][0]}> of {self.name} over time")
             plt.grid()
             plt.show()
-            
-        for i in range(len(desired_expectations)):
-            if desired_expectations[i][2]==False:
-                for j in range(self.N):
-                    plt.plot(time_axis, exp_values_DENS_method[i,j,:], label=f"Site {j}")
-            else:
-                plt.plot(time_axis, exp_values_DENS_method[i,0,:], label=f"Site {desired_expectations[i][3]}")
-            plt.xlabel("Time")
-            plt.ylabel(f"<{desired_expectations[i][0]}>")
-            plt.legend()
-            plt.title(f"Plot of <{desired_expectations[i][0]}> of {self.name} over time")
-            plt.grid()
-            plt.show()
-        
+                   
         
         print("Time averaged spin current through middle site:")
         print(2*(np.average(spin_current_values)))
@@ -383,7 +336,7 @@ class MPS:
 ########################################################################################  
 
 class Time_Operator:
-    def __init__(self,N, d, JXY, JZ, h, s_coup, dt, is_density, Diss_bool, use_CN):
+    def __init__(self,N, d, JXY, JZ, h, s_coup, dt, Diss_bool, is_density, use_CN):
         self.N = N
         self.d = d
         self.JXY = JXY
@@ -588,8 +541,8 @@ s_coup = 1
 im_steps = 0
 im_dt = -0.03j
 
-steps=1000
-current_cutoff=0 #<------
+steps=100
+current_cutoff=round(steps * 0.8) #<------
 
 dt = 0.01
 normalize = False
@@ -618,13 +571,9 @@ MUST LOOK INTO: continued use of locsize even as entanglement in system grows?
 
 
 
-
 ####################################################################################
 
-#temp = np.zeros((d,chi,chi))
-#temp[0,0,0] = np.sqrt(4/5)
-#temp[1,0,0] = 1/np.sqrt(5)
-#MPS1.set_Gamma_singlesite(1, temp)
+
 
 def main():
     MPS1 = MPS(1, N,d,chi, False)
@@ -632,11 +581,17 @@ def main():
     #MPS1.initialize_flipstate()
     #MPS1.initialize_up_or_down(False)
     
+    #temp = np.zeros((d,chi,chi))
+    #temp[0,0,0] = np.sqrt(4/5)
+    #temp[1,0,0] = 1/np.sqrt(5)
+    #MPS1.set_Gamma_singlesite(1, temp)
+    
+    
     DENS1 = create_superket(MPS1, newchi)
 
 
-    TimeOp1 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, is_density=True, Diss_bool=True, use_CN=False)
-    TimeOp2 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, is_density=False, Diss_bool=False, use_CN=False)
+    TimeOp1 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, Diss_bool, is_density=True, use_CN=False)
+    #TimeOp2 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, Diss_bool=False, is_density=False, use_CN=False)
     
     desired_expectations = []
     #desired_expectations.append(("I", np.eye(d**2), False, 0))
@@ -645,10 +600,10 @@ def main():
     
     DENS1.time_evolution(TimeOp1, normalize, steps, desired_expectations)
     
-    desired_expectations_pure = []
+    #desired_expectations_pure = []
     #desired_expectations_pure.append(("I", np.eye(d), False, 0))
-    desired_expectations_pure.append(("Sz", Sz, False, 0))
-    MPS1.time_evolution(TimeOp2, normalize, steps, desired_expectations_pure)
+    #desired_expectations_pure.append(("Sz", Sz, False, 0))
+    #MPS1.time_evolution(TimeOp2, normalize, steps, desired_expectations_pure)
     
     """
     final_Sz = np.zeros(N)
