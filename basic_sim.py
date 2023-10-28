@@ -205,23 +205,6 @@ class MPS:
         return
     
     
-    def expval_old_old(self, Op, singlesite, site):
-        """ Calculates the expectation value of an operator Op, either for a single site or for the entire chain """
-        if singlesite:
-            theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
-            theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
-            theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d)
-            result = np.tensordot(theta_prime, np.conj(theta),axes=([0,1,2],[0,2,1]))
-            return np.real(result)
- 
-        result = np.zeros(self.N)      #calculate expval for entire chain
-        for i in range(self.N):
-            theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,1)) #(chi, d, chi)
-            theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(2,0)) #(chi,d,chi)
-            theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d) 
-            result[i] = np.real(np.tensordot(theta_prime, np.conj(theta),axes=([0,1,2],[0,2,1])))
-        return result
-    
     
     def expval(self, Op, site):
         """ Calculates the expectation value of an operator Op for a single site """
