@@ -205,21 +205,16 @@ class MPS:
         return
     
     
-    
     def expval(self, Op, site):
         """ Calculates the expectation value of an operator Op for a single site """
+        theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
+        theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
+        theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d)
         if self.is_density:     #In case of density matrices we must take the trace
-            theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
-            theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
-            theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d)
-            
             theta_I = np.tensordot(np.diag(NORM_state.Lambda_mat[site,:]), NORM_state.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
             theta_I = np.tensordot(theta,np.diag(NORM_state.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
             return np.real(np.tensordot(theta_prime, np.conj(theta_I), axes=([0,1,2],[0,2,1])))
         else:
-            theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
-            theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
-            theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d)
             result = np.tensordot(theta_prime, np.conj(theta), axes=([0,1,2],[0,2,1]))
             return np.real(result)
     
@@ -239,8 +234,16 @@ class MPS:
         theta = np.tensordot(theta, self.Gamma_mat[site+1,:,:,:],axes=(2,1)) #(chi, d, chi, d) -> (chi,d,d,chi)
         theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+2,:]), axes=(3,0)) #(chi, d, d, chi)
         Op = np.reshape(Op, (self.d,self.d,self.d,self.d))
-        theta_prime = np.tensordot(theta, Op,axes=([1,2],[2,3])) #(chi,chi,d,d)  
-        result = np.tensordot(theta_prime, np.conj(theta), axes=([0,1,2,3],[0,3,1,2]))
+        theta_prime = np.tensordot(theta, Op,axes=([1,2],[2,3])) #(chi,chi,d,d) 
+        
+        if self.is_density:
+            theta_I = np.tensordot(np.diag(NORM_state.Lambda_mat[site,:]), NORM_state.Gamma_mat[site,:,:,:], axes=(1,1))  #(chi, chi, d) -> (chi, d, chi)
+            theta_I = np.tensordot(theta_I,np.diag(NORM_state.Lambda_mat[site+1,:]),axes=(2,0)) #(chi, d, chi) 
+            theta_I = np.tensordot(theta_I, NORM_state.Gamma_mat[site+1,:,:,:],axes=(2,1)) #(chi, d, chi, d) -> (chi,d,d,chi)
+            theta_I = np.tensordot(theta_I,np.diag(NORM_state.Lambda_mat[site+2,:]), axes=(3,0)) #(chi, d, d, chi)
+            result = np.tensordot(theta_prime, np.conj(theta_I), axes=([0,1,2,3],[0,3,1,2]))
+        else:
+            result = np.tensordot(theta_prime, np.conj(theta), axes=([0,1,2,3],[0,3,1,2]))
         return np.real(result)
         
     
@@ -305,7 +308,7 @@ class MPS:
                 plt.plot(time_axis, exp_values[i,0,:], label=f"Site {desired_expectations[i][3]}")
             plt.xlabel("Time")
             plt.ylabel(f"<{desired_expectations[i][0]}>")
-            plt.legend()
+            #plt.legend()
             plt.title(f"Plot of <{desired_expectations[i][0]}> of {self.name} over time")
             plt.grid()
             plt.show()
@@ -502,6 +505,23 @@ def create_maxmixed_normstate():
     NORM_state.set_Gamma_Lambda(gammas, lambdas, locsize)
     return NORM_state
 
+def calculate_thetas_singlesite(state):
+    """ contracts lambda_i gamma_i lambda_i+1 (:= theta) for each site and returns them, used for the NORM_state """
+    """ NOTE: only works for NORM_state since there the result is the same for all sites! """
+    """ This function is used to prevent redundant calculation of these matrices """
+    temp = np.tensordot(np.diag(state.Lambda_mat[0,:]), state.Gamma_mat[0,:,:,:], axes=(1,1)) #(chi, d, chi)
+    return np.tensordot(temp, np.diag(state.Lambda_mat[1,:]),axes=(2,0)) #(chi,d,chi)
+
+
+def calculate_thetas_twosite(state):
+    """ contracts lambda_i gamma_i lambda_i+1 gamma_i+1 lambda_i+2 (:= theta) for each site and returns them, used for the NORM_state """
+    """ NOTE: only works for NORM_state since there the result is the same for all sites! """
+    """ This function is used to prevent redundant calculation of these matrices """
+    temp = np.tensordot(np.diag(state.Lambda_mat[0,:]), state.Gamma_mat[0,:,:,:], axes=(1,1)) #(chi, d, chi)
+    temp = np.tensordot(temp,np.diag(state.Lambda_mat[1,:]),axes=(2,0)) #(chi, d, chi) 
+    temp = np.tensordot(temp, state.Gamma_mat[1,:,:,:],axes=(2,1)) #(chi, d, chi, d) -> (chi,d,d,chi)
+    return np.tensordot(temp,np.diag(state.Lambda_mat[2,:]), axes=(3,0)) #(chi, d, d, chi)
+
 
 
 ####################################################################################
@@ -551,7 +571,8 @@ spin_current_op = np.kron( np.kron(Sx, np.eye(d)) , np.kron(Sy, np.eye(d))) - np
 MUST LOOK INTO: continued use of locsize even as entanglement in system grows?
 """ 
 
-
+NORM_state.singlesite_thetas = calculate_thetas_singlesite(NORM_state)
+NORM_state.twosite_thetas = calculate_thetas_twosite(NORM_state)
 
 
 ####################################################################################
