@@ -210,7 +210,7 @@ class MPS:
         theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
         theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
         theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d)
-        #"""
+        """
         #NOTE:  for singlesite expectations the expectation <<p |A| p>> matches the result for pure state evolutions
         #        hence that specific expectation should be used
         if 1==2:#self.is_density:     #In case of density matrices we must take the trace           
@@ -219,8 +219,9 @@ class MPS:
             #theta_I = np.tensordot(theta_I,np.diag(NORM_state.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
             return np.real(np.tensordot(theta_prime, np.conj(theta_I), axes=([0,1,2],[0,2,1])))
         else:
-            result = np.tensordot(theta_prime, np.conj(theta), axes=([0,1,2],[0,2,1]))
-            return np.real(result)
+        """
+        return np.real(np.tensordot(theta_prime, np.conj(theta), axes=([0,1,2],[0,2,1])))
+
     
     
     def expval_chain(self, Op):
@@ -239,18 +240,19 @@ class MPS:
         theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+2,:]), axes=(3,0)) #(chi, d, d, chi)
         Op = np.reshape(Op, (self.d,self.d,self.d,self.d))
         theta_prime = np.tensordot(theta, Op,axes=([1,2],[2,3])) #(chi,chi,d,d) 
-        
+        """
         if 1==2:#self.is_density:
             theta_I = NORM_state.twosite_thetas
             #theta_I = np.tensordot(np.diag(NORM_state.Lambda_mat[site,:]), NORM_state.Gamma_mat[site,:,:,:], axes=(1,1))  #(chi, chi, d) -> (chi, d, chi)
             #theta_I = np.tensordot(theta_I,np.diag(NORM_state.Lambda_mat[site+1,:]),axes=(2,0)) #(chi, d, chi) 
             #theta_I = np.tensordot(theta_I, NORM_state.Gamma_mat[site+1,:,:,:],axes=(2,1)) #(chi, d, chi, d) -> (chi,d,d,chi)
             #theta_I = np.tensordot(theta_I,np.diag(NORM_state.Lambda_mat[site+2,:]), axes=(3,0)) #(chi, d, d, chi)
-            result = np.tensordot(theta_prime, theta_I, axes=([0,1,2,3],[0,3,1,2]))
+            return np.tensordot(theta_prime, theta_I, axes=([0,1,2,3],[0,3,1,2]))
         else:
             #pass
-            result = np.tensordot(theta_prime, np.conj(theta), axes=([0,1,2,3],[0,3,1,2]))
-        return np.real(result)
+        """
+        return np.real(np.tensordot(theta_prime, np.conj(theta), axes=([0,1,2,3],[0,3,1,2])))
+
         
     def calculate_energy(self, TimeEvol_obj):
         """ calculate the energy of the entire chain from a given Hamiltonian """
@@ -281,49 +283,70 @@ class MPS:
         return abs(m_total[0,0])
     
     
-    def time_evolution(self, TimeEvol_obj, normalize, steps, desired_expectations):
+    def time_evolution(self, TimeEvol_obj, normalize, steps, desired_expectations, track_normalization, track_energy):
         if TimeEvol_obj.is_density != self.is_density:
             print("Error: time evolution operator type does not match state type (MPS/DENS)")
             return
+        
+        if track_normalization:
+            Normalization = np.zeros(steps)
+        if track_energy:
+            energy = np.zeros(steps)
         exp_values = np.ones((len(desired_expectations), self.N, steps)) #array to store expectation values in
-        energy = np.zeros(steps)
-
+        
         if steps>current_cutoff:
             spin_current_values = np.zeros(steps-current_cutoff)
         
         TimeOp = TimeEvol_obj.TimeOp
         Diss_arr = TimeEvol_obj.Diss_arr
         Diss_bool = TimeEvol_obj.Diss_bool
-        Normalization = np.zeros(steps)
+
         
         print(f"Starting time evolution of {self.name}")
         for t in range(steps):
             if (t%20==0):
                 print(t)
-            energy[t] = self.calculate_energy(TimeEvol_obj)
+            
+            if track_normalization:
+                if self.is_density:
+                    Normalization[t] = self.calculate_vidal_inner(NORM_state)
+                else: 
+                    Normalization[t] = self.calculate_vidal_inner(self)
+            
+            if track_energy:
+                energy[t] = self.calculate_energy(TimeEvol_obj)
+            
             for i in range(len(desired_expectations)):
                 if desired_expectations[i][2] == True:
-                    #exp_values[i,:,t] *= self.expval(desired_expectations[i][1], desired_expectations[i][3])
-                    #exp_values[i,:,t] *= self.expval(np.eye(self.d), desired_expectations[i][3])
-                    exp_values[i,:,t] *= self.expval_twosite(np.kron(desired_expectations[i][1], np.eye(self.d)), desired_expectations[i][3])
+                    exp_values[i,:,t] *= self.expval(desired_expectations[i][1], desired_expectations[i][3])
                 else:
                     exp_values[i,:,t] *= self.expval_chain(desired_expectations[i][1])
                                     
             self.TEBD(TimeOp, Diss_arr, normalize, Diss_bool)
-            
-            if self.is_density:
-                Normalization[t] = self.calculate_vidal_inner(NORM_state)
-            
+                        
             #if (t>current_cutoff and Diss_bool==True):
             #    spin_current_values[t-current_cutoff] = self.expval_twosite(spin_current_op, round(self.N/2))
         
-        time_axis = np.arange(steps)*abs(TimeEvol_obj.dt)
-        plt.plot(time_axis, energy)
-        plt.title(f"Energy of {self.name}")
-        plt.show()
         
-        #plt.plot(Normalization)
-        #plt.show()
+        #### Plotting takes place here
+        time_axis = np.arange(steps)*abs(TimeEvol_obj.dt)
+        
+        if track_normalization:
+            plt.plot(Normalization)
+            plt.title(f"Normalization of {self.name} over time")
+            plt.xlabel("Time")
+            plt.xlabel("Normalization")
+            plt.grid()
+            plt.show()
+        
+        if track_energy:
+            plt.plot(time_axis, energy)
+            plt.title(f"Energy of {self.name}")
+            plt.xlabel("Time")
+            plt.ylabel("Energy")
+            plt.grid()
+            plt.show()
+
         for i in range(len(desired_expectations)):
             if desired_expectations[i][2]==False:
                 for j in range(self.N):
@@ -654,8 +677,8 @@ def main():
     pure_desired_expectations = []
     pure_desired_expectations.append(("Sz", Sz, False, 0))
     
-    DENS1.time_evolution(TimeEvol_obj1, normalize, steps, desired_expectations)
-    MPS1.time_evolution(TimeEvol_obj2, normalize, steps, pure_desired_expectations)
+    DENS1.time_evolution(TimeEvol_obj1, normalize, steps, desired_expectations, False, False)
+    MPS1.time_evolution(TimeEvol_obj2, normalize, steps, pure_desired_expectations, False, False)
     DENS2 = create_superket(MPS1, newchi)
 
     
@@ -680,11 +703,6 @@ def main():
     #print(DENS1.Gamma_mat[0,3])
     #print(DENS1.Lambda_mat[1])
 
-    
-    #desired_expectations_pure = []
-    #desired_expectations_pure.append(("I", np.eye(d), False, 0))
-    #desired_expectations_pure.append(("Sz", Sz, False, 0))
-    #MPS1.time_evolution(TimeOp2, normalize, steps, desired_expectations_pure)
     
     """
     final_Sz = np.zeros(N)
