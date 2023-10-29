@@ -213,13 +213,12 @@ class MPS:
         #"""
         #NOTE:  for singlesite expectations the expectation <<p |A| p>> matches the result for pure state evolutions
         #        hence that specific expectation should be used
-        if self.is_density:     #In case of density matrices we must take the trace           
+        if 1==2:#self.is_density:     #In case of density matrices we must take the trace           
             theta_I = NORM_state.singlesite_thetas
             #theta_I = np.tensordot(np.diag(NORM_state.Lambda_mat[site,:]), NORM_state.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
             #theta_I = np.tensordot(theta_I,np.diag(NORM_state.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
             return np.real(np.tensordot(theta_prime, np.conj(theta_I), axes=([0,1,2],[0,2,1])))
         else:
-        #"""
             result = np.tensordot(theta_prime, np.conj(theta), axes=([0,1,2],[0,2,1]))
             return np.real(result)
     
@@ -241,7 +240,7 @@ class MPS:
         Op = np.reshape(Op, (self.d,self.d,self.d,self.d))
         theta_prime = np.tensordot(theta, Op,axes=([1,2],[2,3])) #(chi,chi,d,d) 
         
-        if self.is_density:
+        if 1==2:#self.is_density:
             theta_I = NORM_state.twosite_thetas
             #theta_I = np.tensordot(np.diag(NORM_state.Lambda_mat[site,:]), NORM_state.Gamma_mat[site,:,:,:], axes=(1,1))  #(chi, chi, d) -> (chi, d, chi)
             #theta_I = np.tensordot(theta_I,np.diag(NORM_state.Lambda_mat[site+1,:]),axes=(2,0)) #(chi, d, chi) 
@@ -674,8 +673,7 @@ def main():
     print(DENS2.calculate_energy(TimeEvol_obj1))
     print(DENS1.calculate_energy(TimeEvol_obj1))
     
-    MPS1.time_evolution(TimeEvol_obj2, normalize, steps, pure_desired_expectations)
-    print(MPS1.calculate_energy(TimeEvol_obj2))
+
     
     #print(MPS1.Gamma_mat[0,0,:6,:6])
     #print(MPS1.Gamma_mat[0,1,:6,:6])
