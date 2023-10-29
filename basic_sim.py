@@ -162,7 +162,7 @@ class MPS:
         #operator is applied, tensor is reshaped
         theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3])) #(chi,chi,d,d)              # Two-site operator
         theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d*self.chi, self.d*self.chi)) #first to (d, chi, d, chi), then (d*chi, d*chi) # danger!
-
+                
         X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
         
         if normalize:
@@ -211,11 +211,11 @@ class MPS:
         theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
         theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d)
         
-        if self.is_density:     #In case of density matrices we must take the trace
+        if self.is_density:     #In case of density matrices we must take the trace           
             theta_I = NORM_state.singlesite_thetas
             #theta_I = np.tensordot(np.diag(NORM_state.Lambda_mat[site,:]), NORM_state.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
             #theta_I = np.tensordot(theta_I,np.diag(NORM_state.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
-            return np.real(np.tensordot(theta_prime, theta_I, axes=([0,1,2],[0,2,1])))
+            return np.real(np.tensordot(theta_prime, np.conj(theta_I), axes=([0,1,2],[0,2,1])))
         else:
             result = np.tensordot(theta_prime, np.conj(theta), axes=([0,1,2],[0,2,1]))
             return np.real(result)
@@ -293,12 +293,14 @@ class MPS:
                     exp_values[i,:,t] *= self.expval(desired_expectations[i][1], desired_expectations[i][3])
                 else:
                     exp_values[i,:,t] *= self.expval_chain(desired_expectations[i][1])
-                    
+                                    
             self.TEBD(TimeOp, Diss_arr, normalize, Diss_bool)
-            Normalization[t] = self.calculate_vidal_inner(NORM_state)
             
-            if (t>current_cutoff and Diss_bool==True):
-                spin_current_values[t-current_cutoff] = self.expval_twosite(spin_current_op, round(self.N/2))
+            if self.is_density:
+                Normalization[t] = self.calculate_vidal_inner(NORM_state)
+            
+            #if (t>current_cutoff and Diss_bool==True):
+            #    spin_current_values[t-current_cutoff] = self.expval_twosite(spin_current_op, round(self.N/2))
         
         time_axis = np.arange(steps)*abs(Time_Evol_Op.dt)
         plt.plot(Normalization)
@@ -311,14 +313,15 @@ class MPS:
                 plt.plot(time_axis, exp_values[i,0,:], label=f"Site {desired_expectations[i][3]}")
             plt.xlabel("Time")
             plt.ylabel(f"<{desired_expectations[i][0]}>")
+            plt.legend(bbox_to_anchor=(1.04, 0.5), loc="center left", borderaxespad=0)
             #plt.legend()
             plt.title(f"Plot of <{desired_expectations[i][0]}> of {self.name} over time")
             plt.grid()
             plt.show()
                    
         
-        print("Time averaged spin current through middle site:")
-        print(2*(np.average(spin_current_values)))
+        #print("Time averaged spin current through middle site:")
+        #print(2*(np.average(spin_current_values)))
         
         return
 
@@ -378,6 +381,17 @@ class Time_Operator:
         H_arr[0,:,:] = H_L
         H_arr[self.N-2,:,:] = H_R
         return H_arr
+    
+    """
+    Created as a test to see if time evolution is indeed correct
+    
+    def Create_Dens_Ham_wrong_delete(self):
+        self.Ham = self.Create_Ham()
+        Dens_Ham = np.ones((self.N-1, self.d**4, self.d**4), dtype=complex)
+        for i in range(self.N-1):
+            Dens_Ham[i] = np.kron(self.Ham[i], np.eye(d**2)) - np.kron(np.eye(d**2), self.Ham[i])
+        return Dens_Ham
+    """
     
     def Create_Dens_Ham(self):
         Sx_arr = np.array([np.kron(Sx, np.eye(self.d)) , np.kron(np.eye(self.d), Sx)])
@@ -476,6 +490,8 @@ class Time_Operator:
 
 
 
+###################################################################################
+
 def create_superket(State, newchi):
     """ create MPS of the density matrix of a given MPS """
     ID = State.give_ID()
@@ -530,7 +546,7 @@ def calculate_thetas_twosite(state):
 ####################################################################################
 t0 = time.time()
 #### MPS constants
-N=5
+N=4
 d=2
 chi=10       #MPS truncation parameter
 newchi=16   #DENS truncation parameter
@@ -547,13 +563,13 @@ s_coup = 1
 im_steps = 0
 im_dt = -0.03j
 
-steps=100
-current_cutoff=round(steps * 0.8) #<------
+steps=10
+current_cutoff=round(steps * 0) #<------
 
 dt = 0.01
 normalize = False
 use_CN = False #choose if you want to use Crank-Nicolson approximation
-Diss_bool = True
+Diss_bool = False
 
 #### Spin matrices
 Sp = np.array([[0,1],[0,0]])
@@ -564,19 +580,20 @@ Sz = np.array([[1,0],[0,-1]])
 
 
 NORM_state = create_maxmixed_normstate()
+NORM_state.singlesite_thetas = calculate_thetas_singlesite(NORM_state)
+NORM_state.twosite_thetas = calculate_thetas_twosite(NORM_state)
+
+
 
 #Operator for calculating spin current from Prosen 2009.
 spin_current_op = np.kron( np.kron(Sx, np.eye(d)) , np.kron(Sy, np.eye(d))) - np.kron( np.kron(Sy, np.eye(d)) , np.kron(Sx, np.eye(d)))
 
 ####################################################################################
 
-"""
-MUST LOOK INTO: continued use of locsize even as entanglement in system grows?
-""" 
 
-NORM_state.singlesite_thetas = calculate_thetas_singlesite(NORM_state)
-NORM_state.twosite_thetas = calculate_thetas_twosite(NORM_state)
+""" 28/10: it may be the change you did in "axes" a few days back, INVESTIGATE"""
 
+""" 29/10: running 7 sites for 220 timesteps shows something weird. Just before the 220th timestep it flips a couple tiems """
 
 ####################################################################################
 
@@ -588,29 +605,45 @@ def main():
     #MPS1.initialize_flipstate()
     #MPS1.initialize_up_or_down(False)
     
-    #temp = np.zeros((d,chi,chi))
-    #temp[0,0,0] = np.sqrt(4/5)
-    #temp[1,0,0] = 1/np.sqrt(5)
-    #MPS1.set_Gamma_singlesite(1, temp)
+    temp = np.zeros((d,chi,chi))
+    temp[0,0,0] = np.sqrt(4/5)
+    temp[1,0,0] = 1/np.sqrt(5)
+    MPS1.set_Gamma_singlesite(1, temp)
     
     
     DENS1 = create_superket(MPS1, newchi)
+    #print(DENS1.Gamma_mat[3,0,:6,:6])
 
-
-    TimeOp1 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, Diss_bool, is_density=True, use_CN=False)
-    #TimeOp2 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, Diss_bool=False, is_density=False, use_CN=False)
+    TimeOp1 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, Diss_bool, True, use_CN)
+    #TimeOp2 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, False, False, use_CN)
     
     desired_expectations = []
     #desired_expectations.append(("I", np.eye(d**2), False, 0))
     desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), False, 0))
+    desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), True, 0))
     
+    #pure_desired_expectations = []
+    #pure_desired_expectations.append(("Sz", Sz, False, 0))
     
     DENS1.time_evolution(TimeOp1, normalize, steps, desired_expectations)
+    #MPS1.time_evolution(TimeOp2, normalize, steps, pure_desired_expectations)
+    DENS2 = create_superket(MPS1, newchi)
     
-    print(DENS1.Gamma_mat[0,0])
+    print()
+    print()
+    print(DENS2.Gamma_mat[0,0,:1,:6])
+    print(DENS1.Gamma_mat[0,0,:1,:6])
+    print("BBB")
+    #print(DENS1.Gamma_mat[0,1,:6,:6])
+    #print(DENS1.Gamma_mat[0,2,:6,:6])
+    #print(DENS1.Gamma_mat[0,3,:6,:6])
     print("AAA")
-    print(DENS1.Gamma_mat[0,3])
-    """CONCLUSION, it may be the change you did in "axes" a few days back, INVESTIGATE"""
+    
+    #print(MPS1.Gamma_mat[0,0,:6,:6])
+    #print(MPS1.Gamma_mat[0,1,:6,:6])
+    #print(DENS1.Gamma_mat[0,3])
+    #print(DENS1.Lambda_mat[1])
+
     
     #desired_expectations_pure = []
     #desired_expectations_pure.append(("I", np.eye(d), False, 0))
