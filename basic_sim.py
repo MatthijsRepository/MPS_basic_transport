@@ -210,13 +210,16 @@ class MPS:
         theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
         theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
         theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d)
-        
+        #"""
+        #NOTE:  for singlesite expectations the expectation <<p |A| p>> matches the result for pure state evolutions
+        #        hence that specific expectation should be used
         if self.is_density:     #In case of density matrices we must take the trace           
             theta_I = NORM_state.singlesite_thetas
             #theta_I = np.tensordot(np.diag(NORM_state.Lambda_mat[site,:]), NORM_state.Gamma_mat[site,:,:,:], axes=(1,1)) #(chi, d, chi)
             #theta_I = np.tensordot(theta_I,np.diag(NORM_state.Lambda_mat[site+1,:]),axes=(2,0)) #(chi,d,chi)
             return np.real(np.tensordot(theta_prime, np.conj(theta_I), axes=([0,1,2],[0,2,1])))
         else:
+        #"""
             result = np.tensordot(theta_prime, np.conj(theta), axes=([0,1,2],[0,2,1]))
             return np.real(result)
     
@@ -246,9 +249,17 @@ class MPS:
             #theta_I = np.tensordot(theta_I,np.diag(NORM_state.Lambda_mat[site+2,:]), axes=(3,0)) #(chi, d, d, chi)
             result = np.tensordot(theta_prime, theta_I, axes=([0,1,2,3],[0,3,1,2]))
         else:
+            #pass
             result = np.tensordot(theta_prime, np.conj(theta), axes=([0,1,2,3],[0,3,1,2]))
         return np.real(result)
         
+    def calculate_energy(self, TimeEvol_obj):
+        """ calculate the energy of the entire chain from a given Hamiltonian """
+        Energy = 0
+        for i in range(self.N-1):
+            Energy += self.expval_twosite(TimeEvol_obj.Ham_energy[i],i)
+        return Energy
+            
     
     def calculate_vidal_norm(self):
         """ Calculates the norm of the MPS """
@@ -271,26 +282,30 @@ class MPS:
         return abs(m_total[0,0])
     
     
-    def time_evolution(self, Time_Evol_Op, normalize, steps, desired_expectations):
-        if Time_Evol_Op.is_density != self.is_density:
+    def time_evolution(self, TimeEvol_obj, normalize, steps, desired_expectations):
+        if TimeEvol_obj.is_density != self.is_density:
             print("Error: time evolution operator type does not match state type (MPS/DENS)")
             return
         exp_values = np.ones((len(desired_expectations), self.N, steps)) #array to store expectation values in
+        energy = np.zeros(steps)
 
         if steps>current_cutoff:
             spin_current_values = np.zeros(steps-current_cutoff)
         
-        TimeOp = Time_Evol_Op.TimeOp
-        Diss_arr = Time_Evol_Op.Diss_arr
-        Diss_bool = Time_Evol_Op.Diss_bool
+        TimeOp = TimeEvol_obj.TimeOp
+        Diss_arr = TimeEvol_obj.Diss_arr
+        Diss_bool = TimeEvol_obj.Diss_bool
         Normalization = np.zeros(steps)
         
+        print(f"Starting time evolution of {self.name}")
         for t in range(steps):
             if (t%20==0):
                 print(t)
+            energy[t] = self.calculate_energy(TimeEvol_obj)
             for i in range(len(desired_expectations)):
                 if desired_expectations[i][2] == True:
                     #exp_values[i,:,t] *= self.expval(desired_expectations[i][1], desired_expectations[i][3])
+                    #exp_values[i,:,t] *= self.expval(np.eye(self.d), desired_expectations[i][3])
                     exp_values[i,:,t] *= self.expval_twosite(np.kron(desired_expectations[i][1], np.eye(self.d)), desired_expectations[i][3])
                 else:
                     exp_values[i,:,t] *= self.expval_chain(desired_expectations[i][1])
@@ -303,9 +318,13 @@ class MPS:
             #if (t>current_cutoff and Diss_bool==True):
             #    spin_current_values[t-current_cutoff] = self.expval_twosite(spin_current_op, round(self.N/2))
         
-        time_axis = np.arange(steps)*abs(Time_Evol_Op.dt)
-        plt.plot(Normalization)
+        time_axis = np.arange(steps)*abs(TimeEvol_obj.dt)
+        plt.plot(time_axis, energy)
+        plt.title(f"Energy of {self.name}")
         plt.show()
+        
+        #plt.plot(Normalization)
+        #plt.show()
         for i in range(len(desired_expectations)):
             if desired_expectations[i][2]==False:
                 for j in range(self.N):
@@ -350,10 +369,12 @@ class Time_Operator:
             self.Diss_bool=False
        
         #### Creating Hamiltonian and Time operators
+        #### Note: Ham_energy is the Hamiltonian to be used for energy calculation
         if self.is_density:
-            self.Ham = self.Create_Dens_Ham()
+            self.Ham, self.Ham_energy = self.Create_Dens_Ham()
         else:
             self.Ham = self.Create_Ham()
+            self.Ham_energy = self.Ham
         
         self.TimeOp = self.Create_TimeOp(self.dt, self.use_CN)
         
@@ -365,6 +386,7 @@ class Time_Operator:
         return
         
     def Create_Ham(self):
+        """ Create Hamiltonian for purestate """
         SX = np.kron(Sx, Sx)
         SY = np.kron(Sy, Sy)
         SZ = np.kron(Sz, Sz)
@@ -395,6 +417,7 @@ class Time_Operator:
     """
     
     def Create_Dens_Ham(self):
+        """ create effective Hamiltonian for time evolution of the density matrix """
         Sx_arr = np.array([np.kron(Sx, np.eye(self.d)) , np.kron(np.eye(self.d), Sx)])
         Sy_arr = np.array([np.kron(Sy, np.eye(self.d)) , np.kron(np.eye(self.d), Sy)])
         Sz_arr = np.array([np.kron(Sz, np.eye(self.d)) , np.kron(np.eye(self.d), Sz)])
@@ -415,8 +438,9 @@ class Time_Operator:
             H_arr[i, 1:self.N-2,:,:] *= H_M
             H_arr[i, 0,:,:] = H_L
             H_arr[i, self.N-2,:,:] = H_R
-        
-        return H_arr[0] - np.conj(H_arr[1])     ######## We do not take the Hermitian conjugate into account, since H is Hermitian this has no effect
+
+        #Note: H_arr[0] is the correct Hamiltonian to use for energy calculations
+        return (H_arr[0] - np.conj(H_arr[1])), H_arr[0]     
 
     def Create_TimeOp(self, dt, use_CN):
         if self.is_density:
@@ -524,6 +548,7 @@ def create_maxmixed_normstate():
     NORM_state.set_Gamma_Lambda(gammas, lambdas, locsize)
     return NORM_state
 
+
 def calculate_thetas_singlesite(state):
     """ contracts lambda_i gamma_i lambda_i+1 (:= theta) for each site and returns them, used for the NORM_state """
     """ NOTE: only works for NORM_state since there the result is the same for all sites! """
@@ -531,7 +556,6 @@ def calculate_thetas_singlesite(state):
     #Note, the lambda matrices are just a factor 1, it is possible to simply return a reshaped gamma matrix
     temp = np.tensordot(np.diag(state.Lambda_mat[0,:]), state.Gamma_mat[0,:,:,:], axes=(1,1)) #(chi, d, chi)
     return np.tensordot(temp, np.diag(state.Lambda_mat[1,:]),axes=(2,0)) #(chi,d,chi)
-
 
 def calculate_thetas_twosite(state):
     """ contracts lambda_i gamma_i lambda_i+1 gamma_i+1 lambda_i+2 (:= theta) for each site and returns them, used for the NORM_state """
@@ -547,7 +571,7 @@ def calculate_thetas_twosite(state):
 ####################################################################################
 t0 = time.time()
 #### MPS constants
-N=4
+N=5
 d=2
 chi=10       #MPS truncation parameter
 newchi=16   #DENS truncation parameter
@@ -564,7 +588,7 @@ s_coup = 1
 im_steps = 0
 im_dt = -0.03j
 
-steps=10
+steps=100
 current_cutoff=round(steps * 0) #<------
 
 dt = 0.01
@@ -611,26 +635,30 @@ def main():
     temp = np.zeros((d,chi,chi))
     temp[0,0,0] = np.sqrt(4/5)
     temp[1,0,0] = 1/np.sqrt(5)
-    MPS1.set_Gamma_singlesite(1, temp)
+    MPS1.set_Gamma_singlesite(0, temp)
     
     
     DENS1 = create_superket(MPS1, newchi)
     #print(DENS1.Gamma_mat[3,0,:6,:6])
 
-    TimeOp1 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, Diss_bool, True, use_CN)
-    #TimeOp2 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, False, False, use_CN)
+    TimeEvol_obj1 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, Diss_bool, True, use_CN)
+    TimeEvol_obj2 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, False, False, use_CN)
+    
+    print(MPS1.calculate_energy(TimeEvol_obj2))
+    print(DENS1.calculate_energy(TimeEvol_obj1))
     
     desired_expectations = []
     #desired_expectations.append(("I", np.eye(d**2), False, 0))
     desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), False, 0))
     desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), True, 1))
     
-    #pure_desired_expectations = []
-    #pure_desired_expectations.append(("Sz", Sz, False, 0))
+    pure_desired_expectations = []
+    pure_desired_expectations.append(("Sz", Sz, False, 0))
     
-    DENS1.time_evolution(TimeOp1, normalize, steps, desired_expectations)
-    #MPS1.time_evolution(TimeOp2, normalize, steps, pure_desired_expectations)
+    DENS1.time_evolution(TimeEvol_obj1, normalize, steps, desired_expectations)
+    MPS1.time_evolution(TimeEvol_obj2, normalize, steps, pure_desired_expectations)
     DENS2 = create_superket(MPS1, newchi)
+
     
     print()
     print()
@@ -641,6 +669,13 @@ def main():
     #print(DENS1.Gamma_mat[0,2,:6,:6])
     #print(DENS1.Gamma_mat[0,3,:6,:6])
     print("AAA")
+    
+    print(MPS1.calculate_energy(TimeEvol_obj2))
+    print(DENS2.calculate_energy(TimeEvol_obj1))
+    print(DENS1.calculate_energy(TimeEvol_obj1))
+    
+    MPS1.time_evolution(TimeEvol_obj2, normalize, steps, pure_desired_expectations)
+    print(MPS1.calculate_energy(TimeEvol_obj2))
     
     #print(MPS1.Gamma_mat[0,0,:6,:6])
     #print(MPS1.Gamma_mat[0,1,:6,:6])
