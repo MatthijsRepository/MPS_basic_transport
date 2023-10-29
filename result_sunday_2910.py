@@ -303,9 +303,9 @@ class MPS:
             energy[t] = self.calculate_energy(TimeEvol_obj)
             for i in range(len(desired_expectations)):
                 if desired_expectations[i][2] == True:
-                    #exp_values[i,:,t] *= self.expval(desired_expectations[i][1], desired_expectations[i][3])
+                    exp_values[i,:,t] *= self.expval(desired_expectations[i][1], desired_expectations[i][3])
                     #exp_values[i,:,t] *= self.expval(np.eye(self.d), desired_expectations[i][3])
-                    exp_values[i,:,t] *= self.expval_twosite(np.kron(desired_expectations[i][1], np.eye(self.d)), desired_expectations[i][3])
+                    #exp_values[i,:,t] *= self.expval_twosite(np.kron(desired_expectations[i][1], np.eye(self.d)), desired_expectations[i][3])
                 else:
                     exp_values[i,:,t] *= self.expval_chain(desired_expectations[i][1])
                                     
