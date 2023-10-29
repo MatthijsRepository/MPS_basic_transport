@@ -126,60 +126,14 @@ class MPS:
         self.Gamma_mat[i,:self.locsize[i],:self.locsize[i+1],:] = np.transpose(tmp_gamma,(0,2,1))
         
         Z = np.reshape(Z[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))
-        Z = np.transpose(Z,(0,2,1))
+        Z = np.transpose(Z,(0,2,1)) #(d, chi, chi), each chi by chi matrix is transposed
         inv_lambdas = np.ones(self.locsize[i+2], dtype=complex)
         inv_lambdas *= self.Lambda_mat[i+2, :self.locsize[i+2]]
         inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
         tmp_gamma = np.tensordot(Z[:,:self.locsize[i+1],:self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
         self.Gamma_mat[i+1,:self.locsize[i+1],:self.locsize[i+2],:] = np.transpose(tmp_gamma,(1, 2, 0))    
         return 
-    
-    def apply_twosite(self, TimeOp, i):
-        """
-        gammas = np.ones(np.shape(self.Gamma_mat), dtype=complex)
-        gammas[:,:,:,:] = self.Gamma_mat[:,:,:,:]
-        lambdas = np.ones(np.shape(self.Lambda_mat))
-        lambdas[:,:] = self.Lambda_mat[:,:]
-        loc_size = self.locsize
-        normalize=True
-        chi = self.chi
-        d = self.d
-        """
-        gammas = self.Gamma_mat
-        lambdas = self.Lambda_mat
-        loc_size = self.locsize
-        d = self.d
-        chi = self.chi
-        normalize=True
-        
-        theta = np.tensordot(np.diag(lambdas[i,:]), gammas[i,:,:,:], axes=(1,0))  #(chi, chi, d)
-        theta = np.tensordot(theta,np.diag(lambdas[i+1,:]),axes=(1,0)) #(chi, d, chi)
-        theta = np.tensordot(theta, gammas[i+1,:,:,:],axes=(2,0)) #(chi, d, chi, d)
-        theta = np.tensordot(theta,np.diag(lambdas[i+2,:]), axes=(2,0)) #(chi, d, d, chi)
-        theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3])) #(chi,chi,d,d)              # Two-site operator
-        theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(d*chi,d*chi)) #first to (d, chi, d, chi), then (d*chi, d*chi) # danger!
-        #Singular value decomposition
-        X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
-        #truncation
-        if normalize:
-            lambdas[i+1,:] = Y[:chi]*1/np.linalg.norm(Y[:chi])
-        else:
-            lambdas[i+1,:] = Y[:chi]
-        X = np.reshape(X[:d*chi,:chi], (d, chi,chi))  # danger!
-        inv_lambdas = lambdas[i,:loc_size[i]]**(-1)
-        inv_lambdas[np.isnan(inv_lambdas)]=0
-        tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:,:loc_size[i],:loc_size[i+1]],axes=(1,1)) #(chi, d, chi)
-        gammas[i,:loc_size[i],:loc_size[i+1],:] = np.transpose(tmp_gamma,(0,2,1))
-        Z = np.reshape(Z[0:d*chi,:chi],(d,chi,chi))
-        Z = np.transpose(Z,(0,2,1))
-        inv_lambdas = lambdas[i+2,:loc_size[i+2]]**(-1)
-        inv_lambdas[np.isnan(inv_lambdas)]=0
-        tmp_gamma = np.tensordot(Z[:,:loc_size[i+1],:loc_size[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
-        gammas[i+1,:loc_size[i+1],:loc_size[i+2],:] = np.transpose(tmp_gamma,(1, 2, 0))    
-        
-        self.Gamma_mat = gammas
-        self.Lambda_mat = lambdas
-        return 
+     
     
     def TEBD_purestate(self, TimeOp):
         """
@@ -198,38 +152,6 @@ class MPS:
         #"""
         return
     
-    def TEBD_purestate_old(self, TimeOp):
-        """ Performs a single TEBD sweep over the Lambdas and the Gammas, code is almost identical to that used in the BEP """
-        for i in range(0,self.N-1):
-            theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,1)) #(chi, d, chi)
-            theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(2,0)) #(chi, d, chi)
-            theta = np.tensordot(theta, self.Gamma_mat[i+1,:,:,:],axes=(2,1)) #(chi, d, d, chi)
-            theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+2,:]), axes=(3,0)) #(chi, d, d, chi)
-            theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3]))  #(chi, chi, d, d)
-            theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d * self.chi,self.d * self.chi)) # danger!
-            
-            X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
-            
-            #inv_lambdas are part of the problem due to numerical errors, so low values in Y are rounded to 0
-            Y[Y < 10**-6] = 0
-            self.Lambda_mat[i+1,:] = Y[:chi]*1/np.linalg.norm(Y[:chi])
-            
-            X = np.reshape(X[:self.d*self.chi,:self.chi], (self.d, self.chi, self.chi))  # danger!         
-            inv_lambdas = np.ones(self.locsize[i])
-            inv_lambdas *= self.Lambda_mat[i, :self.locsize[i]]
-            inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
-            tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:, :self.locsize[i], :self.locsize[i+1]], axes=(1,1))
-            tmp_gamma = tmp_gamma.transpose(1,0,2) # to ensure shape (d, size1, size2)
-            self.Gamma_mat[i, :, :self.locsize[i], :self.locsize[i+1]] = tmp_gamma
-            
-            Z = np.reshape(Z[0:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))  # danger!
-            Z = np.transpose(Z,(0,2,1))
-            inv_lambdas = np.ones(self.locsize[i+2])
-            inv_lambdas *= self.Lambda_mat[i, :self.locsize[i+2]]
-            inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
-            tmp_gamma = np.tensordot(Z[:, :self.locsize[i+1], :self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0))
-            self.Gamma_mat[i+1, :, :self.locsize[i+1], :self.locsize[i+2]] = tmp_gamma 
-        return
     
     def construct_superket(self):
         """ Constructs a superket of the density operator, following D. Jaschke et al. (2018) """
@@ -242,7 +164,7 @@ class MPS:
         #MPO's must be in shape (d, d', 1, w1, w2) for kronecker product and einsum to work
         MPO_size = np.shape(MPO_L)[-1]        
         
-        A_L = self.A_mat[0,:, :self.locsize[0], :self.locsize[1]]
+        A_L = self.A_mat[0, :, :self.locsize[0], :self.locsize[1]]
         A_L = np.kron(MPO_L, A_L)
         #self.locsize[0,:] = np.multiply(self.locsize[0], np.array([1,MPO_size])) 
         self.A_mat[0,:, :self.locsize[0], :self.locsize[1]] = np.einsum('aiibc', A_L)
@@ -262,9 +184,9 @@ class MPS:
     
     def expval(self, Op, singlesite, site):
         if singlesite:
-            theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,0))
-            theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(1,0))   
-            theta_prime = np.tensordot(theta, Op, axes=(1,1)) 
+            theta = np.tensordot(np.diag(self.Lambda_mat[site,:]), self.Gamma_mat[site,:,:,:], axes=(1,0)) #(chi, chi, d)
+            theta = np.tensordot(theta,np.diag(self.Lambda_mat[site+1,:]),axes=(1,0)) #(chi, d, chi)  
+            theta_prime = np.tensordot(theta, Op, axes=(1,1)) #(chi, chi, d)
             result = np.tensordot(np.conj(theta_prime),theta,axes=([0,1,2],[0,2,1]))
             return np.real(result)
  
@@ -278,8 +200,8 @@ class MPS:
     
     def calculate_vidal_norm(self):
         m_total = np.eye(chi)
-        for j in range(0, self.N):        
-            sub_tensor = np.tensordot(self.Gamma_mat[j,:,:,:],np.diag(self.Lambda_mat[j+1,:]), axes=(1,0)) #(chi, d, chi)
+        for i in range(0, self.N):        
+            sub_tensor = np.tensordot(self.Gamma_mat[i,:,:,:],np.diag(self.Lambda_mat[i+1,:]), axes=(1,0)) #(chi, d, chi)
             mp = np.tensordot(np.conj(sub_tensor),sub_tensor,axes = (1,1)) #(chi, chi, chi, chi)
             m_total = np.tensordot(m_total,mp,axes=([0,1],[0,2]))           
         return np.real(m_total[0,0])
@@ -335,16 +257,6 @@ def Create_Ham(h, J, N, d):
         H_arr[i,:,:] = H_M
     H_arr[0,:,:] = H_L
     H_arr[N-2,:,:] = H_R
-    
-    """
-    H_arr = np.zeros((N-1, d, d, d, d), dtype=complex)
-     
-    #reshape the (d*d)*(d*d) matrices into d*d*d*d matrices
-    for i in range(1,N-2):      
-        H_arr[i,:,:,:,:] = np.reshape(H_M, (d,d,d,d))
-    H_arr[0,:,:,:,:] = np.reshape(H_L, (d,d,d,d))
-    H_arr[N-2,:,:,:,:] = np.reshape(H_R, (d,d,d,d)) #N-2 since array length N-1 has last index N-2, and last operator acts on sites N-1 and N
-    """
     return H_arr
 
 def Create_TimeOp(H, delta, N, d):
@@ -392,7 +304,7 @@ N=5
 d=2
 chi=10
 steps = 700
-dt = 0.01
+dt = 0.01j
 
 h=-2
 J=-0.1
@@ -412,7 +324,8 @@ Sz = np.array([[1,0],[0,-1]])
 
 MPS1 = MPS(N,d,chi)
 #MPS1.initialize_halfstate()
-MPS1.initialize_flipstate()
+#MPS1.initialize_flipstate()
+
 
 
 
