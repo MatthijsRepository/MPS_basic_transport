@@ -151,7 +151,8 @@ class MPS:
         theta_prime = np.tensordot(theta_prime, np.diag(inv_lambdas), axes=(1,0)) #(chi, d, chi)
         self.Gamma_mat[i,:,:,:] = np.transpose(theta_prime, (1,0,2))
         return
-   
+    
+        
     def apply_twosite(self, TimeOp, i, normalize):
         """ Applies a two-site operator to sites i and i+1 """
         #First the matrices lambda-i to lambda-i+2 are contracted
@@ -162,7 +163,6 @@ class MPS:
         #operator is applied, tensor is reshaped
         theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3])) #(chi,chi,d,d)              # Two-site operator
         theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d*self.chi, self.d*self.chi)) #first to (d, chi, d, chi), then (d*chi, d*chi) # danger!
-                
         X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
         
         if normalize:
@@ -290,7 +290,8 @@ class MPS:
                 print(t)
             for i in range(len(desired_expectations)):
                 if desired_expectations[i][2] == True:
-                    exp_values[i,:,t] *= self.expval(desired_expectations[i][1], desired_expectations[i][3])
+                    #exp_values[i,:,t] *= self.expval(desired_expectations[i][1], desired_expectations[i][3])
+                    exp_values[i,:,t] *= self.expval_twosite(np.kron(desired_expectations[i][1], np.eye(self.d)), desired_expectations[i][3])
                 else:
                     exp_values[i,:,t] *= self.expval_chain(desired_expectations[i][1])
                                     
@@ -593,7 +594,9 @@ spin_current_op = np.kron( np.kron(Sx, np.eye(d)) , np.kron(Sy, np.eye(d))) - np
 
 """ 28/10: it may be the change you did in "axes" a few days back, INVESTIGATE"""
 
-""" 29/10: running 7 sites for 220 timesteps shows something weird. Just before the 220th timestep it flips a couple tiems """
+""" 29/10 1130: running 7 sites for 220 timesteps shows something weird. Just before the 220th timestep it flips a couple tiems """
+
+""" 29/10 1300: independent of apply_twosite, may be due to H[0] - H[1] then? """
 
 ####################################################################################
 
@@ -620,7 +623,7 @@ def main():
     desired_expectations = []
     #desired_expectations.append(("I", np.eye(d**2), False, 0))
     desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), False, 0))
-    desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), True, 0))
+    desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), True, 1))
     
     #pure_desired_expectations = []
     #pure_desired_expectations.append(("Sz", Sz, False, 0))
