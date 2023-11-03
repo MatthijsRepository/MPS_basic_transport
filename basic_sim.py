@@ -4,7 +4,10 @@ os.chdir("C:\\Users\\matth\\OneDrive\\Documents\\TUDelft\\MEP\\code\\MPS_basic_t
 import numpy as np
 from scipy.linalg import expm
 import matplotlib.pyplot as plt
+
+import pickle
 import time
+from datetime import datetime
 
 
 class MPS:
@@ -15,9 +18,9 @@ class MPS:
         self.chi = chi
         self.is_density = is_density
         if is_density:
-            self.name = "DENS"+str(ID)
+            self.name = "DENS"+str(ID)+"_N"+str(N)+"_chi"+str(chi)
         else: 
-            self.name = "MPS"+str(ID)
+            self.name = "MPS"+str(ID)+"_N"+str(N)+"_chi"+str(chi)
         
         self.A_mat = np.zeros((N,d,chi,chi), dtype=complex) 
         #self.B_mat = np.zeros((N,d,chi,chi), dtype=complex)
@@ -28,6 +31,19 @@ class MPS:
         self.locsize = np.zeros(N+1, dtype=int)     #locsize tells us which slice of the matrices at each site holds relevant information
         #self.canonical_site = None
         return
+    
+    def store(self):
+        time = str(datetime.now())
+        timestr = time[5:7] + time[8:10] + "_" + time[11:13] + time[14:16] + "_"  #get month, day, hour, minute
+        
+        folder = "data\\" 
+        filename = timestr + self.name + ".pkl"
+        
+        file = open(folder + filename, 'wb')
+        pickle.dump(self, file)
+        
+        print(f"Stored {filename} to memory")
+        pass
     
     def __str__(self):
         if self.is_density:
@@ -173,6 +189,9 @@ class MPS:
         
         #truncation, and multiplication with the inverse lambda matrix of site i, where care is taken to avoid divides by 0
         X = np.reshape(X[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))  # danger!
+        
+        ##USE lambdas[x].copy()
+        
         inv_lambdas = np.ones(self.locsize[i], dtype=complex)
         inv_lambdas *= self.Lambda_mat[i, :self.locsize[i]]
         inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
@@ -182,6 +201,9 @@ class MPS:
         #truncation, and multiplication with the inverse lambda matrix of site i+2, where care is taken to avoid divides by 0
         Z = np.reshape(Z[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))
         Z = np.transpose(Z,(0,2,1))
+        
+        ##USE lambdas[x].copy()
+        
         inv_lambdas = np.ones(self.locsize[i+2], dtype=complex)
         inv_lambdas *= self.Lambda_mat[i+2, :self.locsize[i+2]]
         inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
@@ -305,8 +327,8 @@ class MPS:
                                     
             self.TEBD(TimeOp, Diss_arr, normalize, Diss_bool)
                         
-            #if (t>current_cutoff and Diss_bool==True):
-            #    spin_current_values[t-current_cutoff] = self.expval_twosite(spin_current_op, round(self.N/2))
+            if (t>current_cutoff and Diss_bool==True):
+                spin_current_values[t-current_cutoff] = self.expval_twosite(spin_current_op, round(self.N/2))
         
         #### Plotting takes place here
         time_axis = np.arange(steps)*abs(TimeEvol_obj.dt)
@@ -340,8 +362,10 @@ class MPS:
             plt.grid()
             plt.show()
                    
-        #print("Time averaged spin current through middle site:")
-        #print(2*(np.average(spin_current_values)))
+        print("Time averaged spin current through middle site:")
+        print((np.average(spin_current_values)))
+        print("Imaginary part of spin current:")
+        print(np.imag(np.average(spin_current_values)))
         return
 
 ########################################################################################  
@@ -460,12 +484,12 @@ class Time_Operator:
     def Calculate_Diss_site(self, Lind_Op):
         """ Creates the dissipative term for a single site """
         """ Lind_Op is shape (k,d,d) or (d,d) -- the k-index is in case multiple different lindblad operators act on a single site """
+        Diss = np.zeros((self.d**2, self.d**2), dtype=complex)
         if Lind_Op.ndim==2:     #If only a single operator is given, this matrix is used
-            Diss = np.kron(Lind_Op, np.conj(Lind_Op))
+            Diss += np.kron(Lind_Op, np.conj(Lind_Op))
             Diss -= 1/2* np.kron(np.matmul(np.conj(np.transpose(Lind_Op)), Lind_Op), np.eye(self.d))
             Diss -= 1/2* np.kron(np.eye(self.d), np.matmul(np.transpose(Lind_Op), np.conj(Lind_Op)))
         else:                   #If multiple matrices are given, the sum of Lindblad operators is used
-            Diss = np.zeros((self.d**2, self.d**2), dtype=complex)
             for i in range(np.shape(Lind_Op)[0]):
                 Diss += np.kron(Lind_Op[i], np.conj(Lind_Op[i]))
                 Diss -= 1/2* np.kron(np.matmul(np.conj(np.transpose(Lind_Op[i])), Lind_Op[i]), np.eye(self.d))
@@ -481,13 +505,13 @@ class Time_Operator:
             ])
         
         Diss_arr["index"][0] = 0
-        Diss_arr["Operator"][0,:,:] = self.Calculate_Diss_site(np.sqrt(2*s_coup)*Sp)
+        Diss_arr["Operator"][0,:,:] = self.Calculate_Diss_site(s_coup*Sp)
     
         #Diss_arr["index"][1] = N-1
         #Diss_arr["Operator"][1,:,:] = self.Calculate_Diss_site(np.sqrt(2*s_coup)*np.eye(self.d))
     
         Diss_arr["index"][1] = N-1
-        Diss_arr["Operator"][1,:,:] = self.Calculate_Diss_site(np.sqrt(2*s_coup)*Sm)
+        Diss_arr["Operator"][1,:,:] = self.Calculate_Diss_site(s_coup*Sm)
         return Diss_arr
     
     def Calculate_Diss_TimeOp(self, dt, use_CN):
@@ -542,8 +566,9 @@ def calculate_thetas_singlesite(state):
     """ NOTE: only works for NORM_state since there the result is the same for all sites! """
     """ This function is used to prevent redundant calculation of these matrices """
     #Note, the lambda matrices are just a factor 1, it is possible to simply return a reshaped gamma matrix
-    temp = np.tensordot(np.diag(state.Lambda_mat[0,:]), state.Gamma_mat[0,:,:,:], axes=(1,1)) #(chi, d, chi)
-    return np.tensordot(temp, np.diag(state.Lambda_mat[1,:]),axes=(2,0)) #(chi,d,chi)
+    #temp = np.tensordot(np.diag(state.Lambda_mat[0,:]), state.Gamma_mat[0,:,:,:], axes=(1,1)) #(chi, d, chi)
+    #return np.tensordot(temp, np.diag(state.Lambda_mat[1,:]),axes=(2,0)) #(chi,d,chi)
+    return state.Gamma_mat[0].transpose(0,2,1)
 
 def calculate_thetas_twosite(state):
     """ contracts lambda_i gamma_i lambda_i+1 gamma_i+1 lambda_i+2 (:= theta) for each site and returns them, used for the NORM_state """
@@ -559,26 +584,29 @@ def calculate_thetas_twosite(state):
 ####################################################################################
 t0 = time.time()
 #### MPS constants
-N=5
+N=10
 d=2
 chi=10       #MPS truncation parameter
-newchi=16   #DENS truncation parameter
+newchi=25   #DENS truncation parameter
 
 
 #### Hamiltonian and Lindblad constants
 h=0
 JXY=1#1
 JZ=1
-s_coup = 1
+
+s_coup=1
+s_coup = np.sqrt(2*s_coup)  
 
 #### Simulation variables
 im_steps = 0
 im_dt = -0.03j
 
-steps=100
-current_cutoff=round(steps * 0) #<------
+steps=1000
+dt = 0.02
+cutoff_factor = 0
+current_cutoff=round(steps * cutoff_factor) #<-----
 
-dt = 0.01
 normalize = False
 use_CN = False #choose if you want to use Crank-Nicolson approximation
 Diss_bool = True
@@ -600,6 +628,9 @@ NORM_state.twosite_thetas = calculate_thetas_twosite(NORM_state)
 #Operator for calculating spin current from Prosen 2009.
 spin_current_op = np.kron( np.kron(Sx, np.eye(d)) , np.kron(Sy, np.eye(d))) - np.kron( np.kron(Sy, np.eye(d)) , np.kron(Sx, np.eye(d)))
 
+#equivalent operator in terms of Sp and Sm
+#spin_current_op = 2*1j* ( np.kron( np.kron(Sp, np.eye(d)) , np.kron(Sm, np.eye(d))) - np.kron( np.kron(Sm, np.eye(d)) , np.kron(Sp, np.eye(d))) )
+
 ####################################################################################
 
     
@@ -614,15 +645,16 @@ def main():
     #MPS1.initialize_flipstate()
     #MPS1.initialize_up_or_down(False)    
     
+    
     DENS1 = create_superket(MPS1, newchi)
     TimeEvol_obj1 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, Diss_bool, True, use_CN)
     
     desired_expectations = []
     #desired_expectations.append(("I", np.eye(d**2), False, 0))
     desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), False, 0))
-    desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), True, 1))
+    #desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), True, 1))
     
-    DENS1.time_evolution(TimeEvol_obj1, normalize, steps, desired_expectations, False, False)
+    DENS1.time_evolution(TimeEvol_obj1, normalize, steps, desired_expectations, True, False)
 
 
     #TimeEvol_obj2 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, False, False, use_CN)
