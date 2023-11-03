@@ -18,9 +18,9 @@ class MPS:
         self.chi = chi
         self.is_density = is_density
         if is_density:
-            self.name = "DENS"+str(ID)+"_N"+str(N)+"_chi"+str(chi)
+            self.name = "DENS"+str(ID)
         else: 
-            self.name = "MPS"+str(ID)+"_N"+str(N)+"_chi"+str(chi)
+            self.name = "MPS"+str(ID)
         
         self.A_mat = np.zeros((N,d,chi,chi), dtype=complex) 
         #self.B_mat = np.zeros((N,d,chi,chi), dtype=complex)
@@ -37,7 +37,7 @@ class MPS:
         timestr = time[5:7] + time[8:10] + "_" + time[11:13] + time[14:16] + "_"  #get month, day, hour, minute
         
         folder = "data\\" 
-        filename = timestr + self.name + ".pkl"
+        filename = timestr+self.name+"_N"+str(self.N)+"_chi"+str(self.chi)+".pkl"
         
         file = open(folder + filename, 'wb')
         pickle.dump(self, file)
@@ -354,8 +354,6 @@ class MPS:
                    
         print("Time averaged spin current through middle site:")
         print((np.average(spin_current_values)))
-        print("Imaginary part of spin current:")
-        print(np.imag(np.average(spin_current_values)))
         return
 
 ########################################################################################  
@@ -519,6 +517,21 @@ class Time_Operator:
 
 ###################################################################################
 
+def load_state(folder, name, new_ID):
+    """ loads a pickled state from folder 'folder' with name 'name' - note: name must include .pkl """
+    filename = folder + name
+    with open(filename, 'rb') as file:  
+        loaded_state = pickle.load(file)
+    globals()[loaded_state.name] = loaded_state
+    
+    loaded_state.ID = new_ID
+    if loaded_state.is_density:
+        loaded_state.name = "DENS"+str(new_ID)
+    else: 
+        loaded_state.name = "MPS"+str(new_ID)
+    return loaded_state
+    
+
 def create_superket(State, newchi):
     """ create MPS of the density matrix of a given MPS """
     ID = State.give_ID()
@@ -573,11 +586,20 @@ def calculate_thetas_twosite(state):
 
 ####################################################################################
 t0 = time.time()
-#### MPS constants
+#### Simulation variables
 N=10
 d=2
-chi=10       #MPS truncation parameter
+chi=10      #MPS truncation parameter
 newchi=25   #DENS truncation parameter
+
+im_steps = 0
+im_dt = -0.03j
+steps=10
+dt = 0.02
+
+normalize = False
+use_CN = False #choose if you want to use Crank-Nicolson approximation
+Diss_bool = True
 
 
 #### Hamiltonian and Lindblad constants
@@ -588,18 +610,6 @@ JZ=1
 s_coup=1
 s_coup = np.sqrt(2*s_coup)  
 
-#### Simulation variables
-im_steps = 0
-im_dt = -0.03j
-
-steps=10
-dt = 0.02
-cutoff_factor = 0
-current_cutoff=round(steps * cutoff_factor) #<-----
-
-normalize = False
-use_CN = False #choose if you want to use Crank-Nicolson approximation
-Diss_bool = True
 
 #### Spin matrices
 Sp = np.array([[0,1],[0,0]])
@@ -609,17 +619,27 @@ Sy = np.array([[0,-1j], [1j,0]])
 Sz = np.array([[1,0],[0,-1]])
 
 
+#### Spin current operator and cutoff factor
+cutoff_factor = 0
+current_cutoff=round(steps * cutoff_factor) 
+spin_current_op = np.kron( np.kron(Sx, np.eye(d)) , np.kron(Sy, np.eye(d))) - np.kron( np.kron(Sy, np.eye(d)) , np.kron(Sx, np.eye(d)))
+#equivalent operator in terms of Sp and Sm
+#spin_current_op = 2*1j* ( np.kron( np.kron(Sp, np.eye(d)) , np.kron(Sm, np.eye(d))) - np.kron( np.kron(Sm, np.eye(d)) , np.kron(Sp, np.eye(d))) )
+
+
+#### NORM_state initialization
 NORM_state = create_maxmixed_normstate()
 NORM_state.singlesite_thetas = calculate_thetas_singlesite(NORM_state)
 NORM_state.twosite_thetas = calculate_thetas_twosite(NORM_state)
 
 
+#### Loading and saving states
+loadstate_folder = "data\\"
+loadstate_filename = "1103_1624_DENS1_N10_chi25.pkl"
 
-#Operator for calculating spin current from Prosen 2009.
-spin_current_op = np.kron( np.kron(Sx, np.eye(d)) , np.kron(Sy, np.eye(d))) - np.kron( np.kron(Sy, np.eye(d)) , np.kron(Sx, np.eye(d)))
+save_state_bool = False
+load_state_bool = False
 
-#equivalent operator in terms of Sp and Sm
-#spin_current_op = 2*1j* ( np.kron( np.kron(Sp, np.eye(d)) , np.kron(Sm, np.eye(d))) - np.kron( np.kron(Sm, np.eye(d)) , np.kron(Sp, np.eye(d))) )
 
 ####################################################################################
 
@@ -630,30 +650,40 @@ spin_current_op = np.kron( np.kron(Sx, np.eye(d)) , np.kron(Sy, np.eye(d))) - np
 #MPS1.set_Gamma_singlesite(0, temp)
 
 def main():
-    MPS1 = MPS(1, N,d,chi, False)
-    MPS1.initialize_halfstate()
-    #MPS1.initialize_flipstate()
-    #MPS1.initialize_up_or_down(False)    
+    #load state or create a new one
+    if load_state_bool:
+        DENS1 = load_state(loadstate_folder, loadstate_filename, 1)
+    else:
+        MPS1 = MPS(1, N,d,chi, False)
+        MPS1.initialize_halfstate()
+        #MPS1.initialize_flipstate()
+        #MPS1.initialize_up_or_down(False) 
+        DENS1 = create_superket(MPS1, newchi)
     
-    
-    DENS1 = create_superket(MPS1, newchi)
+    #creating time evolution object
     TimeEvol_obj1 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, Diss_bool, True, use_CN)
     
+    #declaring which desired operator expectations must be tracked
     desired_expectations = []
-    #desired_expectations.append(("I", np.eye(d**2), False, 0))
     desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), False, 0))
     #desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), True, 1))
     
+    #time evolution of the state
     DENS1.time_evolution(TimeEvol_obj1, normalize, steps, desired_expectations, True, False)
-
-
-    #TimeEvol_obj2 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, False, False, use_CN)
-    #pure_desired_expectations = []
-    #pure_desired_expectations.append(("Sz", Sz, False, 0))
-    #MPS1.time_evolution(TimeEvol_obj2, normalize, steps, pure_desired_expectations, False, False)
-    #DENS2 = create_superket(MPS1, newchi)
     
-   
+    if save_state_bool:
+        DENS1.store()
+
+
+
+
+    """
+    TimeEvol_obj2 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, False, False, use_CN)
+    pure_desired_expectations = []
+    pure_desired_expectations.append(("Sz", Sz, False, 0))
+    MPS1.time_evolution(TimeEvol_obj2, normalize, steps, pure_desired_expectations, False, False)
+    """
+       
     """
     final_Sz = np.zeros(N)
     for i in range(N):
@@ -669,53 +699,6 @@ def main():
     pass
 
 main()
-
-
-
-
-
-#####
-# N_list = [5, 10]
-# J_list = [0.3342275264055715, 0.2090220151776465]
-
-
-
-
-"""
-a = MPS1.calculate_vidal_inner(MPS1)
-
-#DENS1 = create_superket(MPS1, newchi)
-c = DENS1.calculate_vidal_inner(NORM_state)
-
-print(a)
-print(c)
-
-
-DENS1 = create_superket(MPS1, newchi)
-d =DENS1.calculate_vidal_inner(NORM_state)
-print(d)
-
-""" 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 elapsed_time = time.time()-t0
 print(f"Elapsed simulation time: {elapsed_time}")
