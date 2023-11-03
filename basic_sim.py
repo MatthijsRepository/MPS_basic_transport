@@ -31,8 +31,15 @@ class MPS:
         self.locsize = np.zeros(N+1, dtype=int)     #locsize tells us which slice of the matrices at each site holds relevant information
         #self.canonical_site = None
         return
-    
+        
+    def __str__(self):
+        if self.is_density:
+            return f"Density matrix {self.ID}, {self.N} sites of dimension {self.d}, chi={self.chi}"
+        else:
+            return f"MPS {self.ID}, {self.N} sites of dimension {self.d}, chi={self.chi}"
+            
     def store(self):
+        """ Stores the object to memory using pickle """
         time = str(datetime.now())
         timestr = time[5:7] + time[8:10] + "_" + time[11:13] + time[14:16] + "_"  #get month, day, hour, minute
         
@@ -43,31 +50,20 @@ class MPS:
         pickle.dump(self, file)
         
         print(f"Stored {filename} to memory")
-        pass
+        pass        
+      
+    def set_Gamma_Lambda(self, gammas, lambdas, locsize):
+        """ Custom initialization of the MPS """
+        self.Gamma_mat = gammas
+        self.Lambda_mat = lambdas
+        self.locsize = locsize
+        return
     
-    def __str__(self):
-        if self.is_density:
-            return f"Density matrix {self.ID}, {self.N} sites of dimension {self.d}, chi={self.chi}"
-        else:
-            return f"MPS {self.ID}, {self.N} sites of dimension {self.d}, chi={self.chi}"
+    def set_Gamma_singlesite(self, site, matrix):
+        """ sets a gamma matrices of a site to a desired matrix  """
+        self.Gamma_mat[site,:,:,:] = matrix
+        return   
     
-    def give_ID(self):
-        return self.ID
-    
-    def give_NDchi(self):
-        return self.N, self.d, self.chi
-    
-    def give_A(self):
-        """ Returns the 'A' matrices of the MPS """
-        return self.A_mat
-    
-    def give_GL(self):
-        """ Returns the Lambda and Gamma matrices of the MPS """
-        return self.Gamma_mat, self.Lambda_mat
-    
-    def give_locsize(self):
-        return self.locsize
-
     def initialize_halfstate(self):
         """ Initializes the MPS into a product state of uniform eigenstates """
         #self.B_mat[:,:,0,0] = 1/np.sqrt(2)
@@ -115,18 +111,6 @@ class MPS:
         arr = np.minimum(arr,self.chi)               # For large L, d**arr returns negative values, this line prohibits this effect
         self.locsize = np.minimum(self.d**arr, self.chi)
         return
-    
-    def set_Gamma_Lambda(self, gammas, lambdas, locsize):
-        """ Custom initialization of the MPS """
-        self.Gamma_mat = gammas
-        self.Lambda_mat = lambdas
-        self.locsize = locsize
-        return
-    
-    def set_Gamma_singlesite(self, site, matrix):
-        """ sets a gamma matrices of a site to a desired matrix  """
-        self.Gamma_mat[site,:,:,:] = matrix
-        return   
     
     def construct_supermatrices(self, newchi):
         """ Constructs a superket of the density operator, following D. Jaschke et al. (2018) """
@@ -269,7 +253,7 @@ class MPS:
     def calculate_vidal_inner(self, MPS2):
         """ Calculates the inner product of the MPS with another MPS """
         m_total = np.eye(self.chi)
-        temp_gammas, temp_lambdas = MPS2.give_GL()  #retrieve gammas and lambdas of MPS2
+        temp_gammas, temp_lambdas = MPS2.Gamma_mat, MPS2.Lambda_mat  #retrieve gammas and lambdas of MPS2
         for j in range(0, self.N):        
             st1 = np.tensordot(self.Gamma_mat[j,:,:,:],np.diag(self.Lambda_mat[j+1,:]), axes=(2,0)) #(d, chi, chi)
             st2 = np.tensordot(temp_gammas[j,:,:,:],np.diag(temp_lambdas[j+1,:]), axes=(2,0)) #(d, chi, chi)
@@ -534,12 +518,10 @@ def load_state(folder, name, new_ID):
 
 def create_superket(State, newchi):
     """ create MPS of the density matrix of a given MPS """
-    ID = State.give_ID()
-    N, d, chi = State.give_NDchi()
     gammas, lambdas, locsize = State.construct_vidal_supermatrices(newchi)
     
-    name = "DENS" + str(ID)
-    newDENS = MPS(ID, N, d**2, newchi, True)
+    name = "DENS" + str(State.ID)
+    newDENS = MPS(State.ID, State.N, State.d**2, newchi, True)
     newDENS.set_Gamma_Lambda(gammas, lambdas, locsize)
     globals()[name] = newDENS
     return newDENS
