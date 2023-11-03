@@ -154,13 +154,11 @@ class MPS:
         if normalize:
             theta_prime = theta_prime / np.linalg.norm(theta_prime)
         
-        inv_lambdas = np.ones(self.chi, dtype=complex)  #not working with locsize here
-        inv_lambdas *= self.Lambda_mat[i]
+        inv_lambdas  = self.Lambda_mat[i].copy()
         inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
         theta_prime = np.tensordot(np.diag(inv_lambdas), theta_prime, axes=(1,0)) #(chi, chi, d) 
         
-        inv_lambdas = np.ones(self.chi, dtype=complex)  #not working with locsize here
-        inv_lambdas *= self.Lambda_mat[i+1]
+        inv_lambdas = self.Lambda_mat[i+1].copy()
         inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
         theta_prime = np.tensordot(theta_prime, np.diag(inv_lambdas), axes=(1,0)) #(chi, d, chi)
         self.Gamma_mat[i,:,:,:] = np.transpose(theta_prime, (1,0,2))
@@ -189,11 +187,7 @@ class MPS:
         
         #truncation, and multiplication with the inverse lambda matrix of site i, where care is taken to avoid divides by 0
         X = np.reshape(X[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))  # danger!
-        
-        ##USE lambdas[x].copy()
-        
-        inv_lambdas = np.ones(self.locsize[i], dtype=complex)
-        inv_lambdas *= self.Lambda_mat[i, :self.locsize[i]]
+        inv_lambdas  = self.Lambda_mat[i, :self.locsize[i]].copy()
         inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
         tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:,:self.locsize[i],:self.locsize[i+1]],axes=(1,1)) #(chi, d, chi)
         self.Gamma_mat[i, :, :self.locsize[i],:self.locsize[i+1]] = np.transpose(tmp_gamma,(1,0,2))
@@ -201,11 +195,7 @@ class MPS:
         #truncation, and multiplication with the inverse lambda matrix of site i+2, where care is taken to avoid divides by 0
         Z = np.reshape(Z[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))
         Z = np.transpose(Z,(0,2,1))
-        
-        ##USE lambdas[x].copy()
-        
-        inv_lambdas = np.ones(self.locsize[i+2], dtype=complex)
-        inv_lambdas *= self.Lambda_mat[i+2, :self.locsize[i+2]]
+        inv_lambdas = self.Lambda_mat[i+2, :self.locsize[i+2]].copy()
         inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
         tmp_gamma = np.tensordot(Z[:,:self.locsize[i+1],:self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
         self.Gamma_mat[i+1, :, :self.locsize[i+1],:self.locsize[i+2]] = tmp_gamma    
@@ -602,7 +592,7 @@ s_coup = np.sqrt(2*s_coup)
 im_steps = 0
 im_dt = -0.03j
 
-steps=1000
+steps=10
 dt = 0.02
 cutoff_factor = 0
 current_cutoff=round(steps * cutoff_factor) #<-----
