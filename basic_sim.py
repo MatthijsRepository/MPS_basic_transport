@@ -22,14 +22,10 @@ class MPS:
         else: 
             self.name = "MPS"+str(ID)
         
-        self.A_mat = np.zeros((N,d,chi,chi), dtype=complex) 
-        #self.B_mat = np.zeros((N,d,chi,chi), dtype=complex)
-        
         self.Lambda_mat = np.zeros((N+1,chi))
         self.Gamma_mat = np.zeros((N,d,chi,chi), dtype=complex)
 
         self.locsize = np.zeros(N+1, dtype=int)     #locsize tells us which slice of the matrices at each site holds relevant information
-        #self.canonical_site = None
         return
         
     def __str__(self):
@@ -66,8 +62,6 @@ class MPS:
     
     def initialize_halfstate(self):
         """ Initializes the MPS into a product state of uniform eigenstates """
-        #self.B_mat[:,:,0,0] = 1/np.sqrt(2)
-        self.A_mat[:,:,0,0] = 1/np.sqrt(self.d)
         self.Lambda_mat[:,0] = 1
         self.Gamma_mat[:,:,0,0] = 1/np.sqrt(self.d)
         
@@ -83,10 +77,8 @@ class MPS:
         self.Lambda_mat[:,0] = 1
         for i in range(self.N):
             if (i%2==0):
-                self.A_mat[i,0,0,0] = 1
                 self.Gamma_mat[i,0,0,0] = 1
             else:
-                self.A_mat[i,self.d-1,0,0] = 1
                 self.Gamma_mat[i,self.d-1,0,0] = 1
                
         #self.locsize[:,:] = 1
@@ -102,7 +94,6 @@ class MPS:
             i=0 
         else:   #initialize each spin in down state
             i=self.d-1
-        self.A_mat[:,i,0,0] = 1
         self.Lambda_mat[:,0] = 1
         self.Gamma_mat[:,i,0,0] = 1
         
@@ -112,12 +103,6 @@ class MPS:
         self.locsize = np.minimum(self.d**arr, self.chi)
         return
     
-    def construct_supermatrices(self, newchi):
-        """ Constructs a superket of the density operator, following D. Jaschke et al. (2018) """
-        sup_A_mat = np.zeros((self.N, self.d**2, newchi**2, newchi**2), dtype=complex)
-        for i in range(self.N):
-            sup_A_mat[i,:,:,:] = np.kron(self.A_mat[i], np.conj(self.A_mat[i]))[:newchi, :newchi]
-        return sup_A_mat, np.minimum(self.locsize**2, newchi)
     
     def construct_vidal_supermatrices(self, newchi):
         """ Constructs a superket of the density operator in Vidal decomposition """
