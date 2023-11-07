@@ -10,8 +10,12 @@ import time
 from datetime import datetime
 
 
+########################################################################################################
+
 class MPS:
     def __init__(self, ID, N, d, chi, is_density):
+        self.c = None
+        
         self.ID = ID
         self.N = N
         self.d = d
@@ -103,7 +107,6 @@ class MPS:
         self.locsize = np.minimum(self.d**arr, self.chi)
         return
     
-    
     def construct_vidal_supermatrices(self, newchi):
         """ Constructs a superket of the density operator in Vidal decomposition """
         sup_Gamma_mat = np.zeros((self.N, self.d**2, newchi, newchi), dtype=complex)
@@ -136,13 +139,13 @@ class MPS:
     def apply_twosite(self, TimeOp, i, normalize):
         """ Applies a two-site operator to sites i and i+1 """
         #First the matrices lambda-i to lambda-i+2 are contracted
-        theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,1))  #(chi, chi, d) -> (chi, d, chi)
+        theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,1))  #(chi, d, chi)
         theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(2,0)) #(chi, d, chi) 
-        theta = np.tensordot(theta, self.Gamma_mat[i+1,:,:,:],axes=(2,1)) #(chi, d, chi, d) -> (chi,d,d,chi)
+        theta = np.tensordot(theta, self.Gamma_mat[i+1,:,:,:],axes=(2,1)) #(chi,d,d,chi)
         theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+2,:]), axes=(3,0)) #(chi, d, d, chi)
         #operator is applied, tensor is reshaped
         theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3])) #(chi,chi,d,d)              # Two-site operator
-        theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d*self.chi, self.d*self.chi)) #first to (d, chi, d, chi), then (d*chi, d*chi) # danger!
+        theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d*self.chi, self.d*self.chi)) #first to (d, chi, d, chi), then (d*chi, d*chi)
         X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
         
         if normalize:
@@ -155,7 +158,7 @@ class MPS:
             self.Lambda_mat[i+1,:] = Y[:self.chi]
         
         #truncation, and multiplication with the inverse lambda matrix of site i, where care is taken to avoid divides by 0
-        X = np.reshape(X[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))  # danger!
+        X = np.reshape(X[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi)) 
         inv_lambdas  = self.Lambda_mat[i, :self.locsize[i]].copy()
         inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
         tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:,:self.locsize[i],:self.locsize[i+1]],axes=(1,1)) #(chi, d, chi)
@@ -242,7 +245,7 @@ class MPS:
         for j in range(0, self.N):        
             st1 = np.tensordot(self.Gamma_mat[j,:,:,:],np.diag(self.Lambda_mat[j+1,:]), axes=(2,0)) #(d, chi, chi)
             st2 = np.tensordot(temp_gammas[j,:,:,:],np.diag(temp_lambdas[j+1,:]), axes=(2,0)) #(d, chi, chi)
-            mp = np.tensordot(np.conj(st1), st2, axes=(0,0)) #(chi, chi, chi, chi)     
+            mp = np.tensordot(np.conj(st1), st2, axes=(0,0)) #(chi, chi, chi, chi)    
             m_total = np.tensordot(m_total,mp,axes=([0,1],[0,2]))    
         return abs(m_total[0,0])
     
@@ -324,6 +327,73 @@ class MPS:
         print("Time averaged spin current through middle site:")
         print((np.average(spin_current_values)))
         return
+    
+    def full_contract(self):
+        contraction_time = time.time()
+        c = np.diag(self.Lambda_mat[0])
+        for i in range(self.N):
+            c = np.tensordot(c, self.Gamma_mat[i], axes=(-1, 1))
+            c = np.tensordot(c, np.diag(self.Lambda_mat[i+1]), axes=(-1,0))
+        self.c = c[0, ..., 0]
+        print("Contraction time: ")
+        print(time.time() - contraction_time)
+        #Note: N=6 contraction time about 0.1s
+        #      N=10 contraction time about 76s
+        return
+        
+    def full_decompose(self):
+        #we begin with Lambda_0 the same as before, so we can immediately use that one
+        print("Full decompose")
+        c = self.c.copy()
+        prev_rank = 1
+        for i in range(self.N):
+            if i==0:
+                c = c.reshape((self.d*prev_rank, self.d**(self.N-i-1)))
+            else:
+                c_dim = np.shape(c)
+                c = c.reshape((int(c_dim[0]*self.d), int(c_dim[1]/self.d)))
+            X, Y, Z = np.linalg.svd(c, full_matrices=False)
+            
+            print(i)
+            print(np.shape(X))
+            print(np.shape(Y))
+            print(np.shape(Z))
+            
+            temp = np.zeros((self.d, self.chi, self.chi), dtype=complex)
+            X_dim = np.shape(X)
+
+            #
+            if i==0:    #special case for the first gamma since it is a rowvector and does not need to be multiplied with a lambda
+                temp[:,0,:min(X_dim[1], self.chi)] = X
+                self.Gamma_mat[i] = temp
+            else:
+                X = X.reshape((self.d, int(X_dim[0]/self.d), X_dim[1]))
+                X = X[:, :min(int(X_dim[0]/self.d),self.chi), :]
+                X = np.tensordot(np.diag(self.Lambda_mat[i, :min(int(X_dim[0]/self.d),self.chi)]), X, axes = (1,1)).transpose(1,0,2) #to ensure the spin index is first
+                temp[:, :min(int(X_dim[0]/self.d),self.chi), :min(X_dim[1],self.chi)]
+                self.Gamma_mat[i] = temp
+                
+            self.Lambda_mat[i+1, :min(len(Y),self.chi)] = Y[:min(len(Y), self.chi)]
+            
+            prev_rank = X_dim[1]
+            
+            Z = Z[:prev_rank,:]
+            c = np.tensordot(np.diag(Y), Z, axes=(1,0))
+            print(np.shape(c))
+            """
+            Z = Z.T
+            Z_dim = np.shape(Z)
+            Z = Z.reshape((prev_rank, int(Z_dim[0]/prev_rank)*Z_dim[1] ))            
+            print(np.shape(np.diag(Y)))
+            print(np.shape(Z))
+            c = np.tensordot(np.diag(Y), Z, axes=(1,0))
+            """
+                
+            print(np.shape(c))
+            
+    
+        return     
+    
 
 ########################################################################################  
 
@@ -551,10 +621,14 @@ def calculate_thetas_twosite(state):
 
 
 
+
+
+
+
 ####################################################################################
 t0 = time.time()
 #### Simulation variables
-N=10
+N=4
 d=2
 chi=10      #MPS truncation parameter
 newchi=25   #DENS truncation parameter
@@ -641,7 +715,21 @@ def main():
     if save_state_bool:
         DENS1.store()
 
+    
 
+    final_Sz = np.zeros(N)
+    for i in range(N):
+        final_Sz[i] = DENS1.expval(np.kron(Sz, np.eye(d)), i)
+    plt.plot(final_Sz, linestyle="", marker=".")
+    plt.xlabel("Site")
+    plt.ylabel("<Sz>")
+    plt.grid()
+    plt.title(f"<Sz> for each site after {steps} steps with dt={dt}")
+    plt.show()  
+
+    DENS1.full_contract()
+    print(np.shape(DENS1.c))
+    DENS1.full_decompose()
 
 
     """
@@ -651,17 +739,16 @@ def main():
     MPS1.time_evolution(TimeEvol_obj2, normalize, steps, pure_desired_expectations, False, False)
     """
        
-    """
     final_Sz = np.zeros(N)
     for i in range(N):
-        final_Sz[i] = DENS1.expval(np.kron(Sz, np.eye(d)), True, i)
+        final_Sz[i] = DENS1.expval(np.kron(Sz, np.eye(d)), i)
     plt.plot(final_Sz, linestyle="", marker=".")
     plt.xlabel("Site")
     plt.ylabel("<Sz>")
     plt.grid()
     plt.title(f"<Sz> for each site after {steps} steps with dt={dt}")
     plt.show()    
-    """
+
     
     pass
 
