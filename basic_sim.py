@@ -289,8 +289,8 @@ class MPS:
                                     
             self.TEBD(TimeOp, Diss_arr, normalize, Diss_bool)
                         
-            if (t>current_cutoff and Diss_bool==True):
-                spin_current_values[t-current_cutoff] = self.expval_twosite(spin_current_op, round(self.N/2))
+            #if (t>current_cutoff and Diss_bool==True):
+                #spin_current_values[t-current_cutoff] = self.expval_twosite(spin_current_op, round(self.N/2))
         
         #### Plotting takes place here
         time_axis = np.arange(steps)*abs(TimeEvol_obj.dt)
@@ -353,31 +353,38 @@ class MPS:
                 c_dim = np.shape(c)
                 c = c.reshape((int(c_dim[0]*self.d), int(c_dim[1]/self.d)))
             X, Y, Z = np.linalg.svd(c, full_matrices=False)
-            
+            print()
+            print("START")
             print(i)
             print(np.shape(X))
             print(np.shape(Y))
             print(np.shape(Z))
-            
+
             temp = np.zeros((self.d, self.chi, self.chi), dtype=complex)
             X_dim = np.shape(X)
-
+            
             #
             if i==0:    #special case for the first gamma since it is a rowvector and does not need to be multiplied with a lambda
                 temp[:,0,:min(X_dim[1], self.chi)] = X
                 self.Gamma_mat[i] = temp
             else:
                 X = X.reshape((self.d, int(X_dim[0]/self.d), X_dim[1]))
-                X = X[:, :min(int(X_dim[0]/self.d),self.chi), :]
-                X = np.tensordot(np.diag(self.Lambda_mat[i, :min(int(X_dim[0]/self.d),self.chi)]), X, axes = (1,1)).transpose(1,0,2) #to ensure the spin index is first
-                temp[:, :min(int(X_dim[0]/self.d),self.chi), :min(X_dim[1],self.chi)]
+                X_dim_new = np.shape(X)
+                X = X[:, :min(X_dim_new[1],self.chi), :min(X_dim_new[2],self.chi)]
+                X = np.tensordot(np.diag(self.Lambda_mat[i, :min(X_dim_new[1],self.chi)]), X, axes = (1,1)).transpose(1,0,2) #to ensure the spin index is first
+                print("mid")
+                print(np.shape(X))
+                temp[:, :min(X_dim_new[1],self.chi), :min(X_dim_new[2],self.chi)] = X
                 self.Gamma_mat[i] = temp
-                
+
+            #print(Y)    
             self.Lambda_mat[i+1, :min(len(Y),self.chi)] = Y[:min(len(Y), self.chi)]
+
             
             prev_rank = X_dim[1]
-            
-            Z = Z[:prev_rank,:]
+            print("end")
+            print(np.shape(Z))
+            #Z = Z[:prev_rank,:]
             c = np.tensordot(np.diag(Y), Z, axes=(1,0))
             print(np.shape(c))
             """
@@ -387,11 +394,7 @@ class MPS:
             print(np.shape(np.diag(Y)))
             print(np.shape(Z))
             c = np.tensordot(np.diag(Y), Z, axes=(1,0))
-            """
-                
-            print(np.shape(c))
-            
-    
+            """    
         return     
     
 
@@ -631,7 +634,7 @@ t0 = time.time()
 N=4
 d=2
 chi=10      #MPS truncation parameter
-newchi=25   #DENS truncation parameter
+newchi=20   #DENS truncation parameter
 
 im_steps = 0
 im_dt = -0.03j
@@ -727,11 +730,16 @@ def main():
     plt.title(f"<Sz> for each site after {steps} steps with dt={dt}")
     plt.show()  
 
+
+    #print(DENS1.Gamma_mat[0,0,0])  
+    #print(DENS1.Gamma_mat[N-1,3,0])    
+
     DENS1.full_contract()
-    print(np.shape(DENS1.c))
+    #print(np.shape(DENS1.c))
     DENS1.full_decompose()
 
-
+    #print(DENS1.Gamma_mat[0,0,0])  
+    #print(DENS1.Gamma_mat[N-1,3,0])  
     """
     TimeEvol_obj2 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, False, False, use_CN)
     pure_desired_expectations = []
