@@ -14,8 +14,6 @@ from datetime import datetime
 
 class MPS:
     def __init__(self, ID, N, d, chi, is_density):
-        self.c = None
-        
         self.ID = ID
         self.N = N
         self.d = d
@@ -299,7 +297,7 @@ class MPS:
             plt.plot(Normalization)
             plt.title(f"Normalization of {self.name} over time")
             plt.xlabel("Time")
-            plt.xlabel("Normalization")
+            plt.ylabel("Normalization")
             plt.grid()
             plt.show()
         if track_energy:
@@ -328,75 +326,10 @@ class MPS:
         print((np.average(spin_current_values)))
         return
     
-    def full_contract(self):
-        contraction_time = time.time()
-        c = np.diag(self.Lambda_mat[0])
-        for i in range(self.N):
-            c = np.tensordot(c, self.Gamma_mat[i], axes=(-1, 1))
-            c = np.tensordot(c, np.diag(self.Lambda_mat[i+1]), axes=(-1,0))
-        self.c = c[0, ..., 0]
-        print("Contraction time: ")
-        print(time.time() - contraction_time)
-        #Note: N=6 contraction time about 0.1s
-        #      N=10 contraction time about 76s
-        return
-        
-    def full_decompose(self):
-        #we begin with Lambda_0 the same as before, so we can immediately use that one
-        print("Full decompose")
-        c = self.c.copy()
-        prev_rank = 1
-        for i in range(self.N):
-            if i==0:
-                c = c.reshape((self.d*prev_rank, self.d**(self.N-i-1)))
-            else:
-                c_dim = np.shape(c)
-                c = c.reshape((int(c_dim[0]*self.d), int(c_dim[1]/self.d)))
-            X, Y, Z = np.linalg.svd(c, full_matrices=False)
-            print()
-            print("START")
-            print(i)
-            print(np.shape(X))
-            print(np.shape(Y))
-            print(np.shape(Z))
-
-            temp = np.zeros((self.d, self.chi, self.chi), dtype=complex)
-            X_dim = np.shape(X)
-            
-            #
-            if i==0:    #special case for the first gamma since it is a rowvector and does not need to be multiplied with a lambda
-                temp[:,0,:min(X_dim[1], self.chi)] = X
-                self.Gamma_mat[i] = temp
-            else:
-                X = X.reshape((self.d, int(X_dim[0]/self.d), X_dim[1]))
-                X_dim_new = np.shape(X)
-                X = X[:, :min(X_dim_new[1],self.chi), :min(X_dim_new[2],self.chi)]
-                X = np.tensordot(np.diag(self.Lambda_mat[i, :min(X_dim_new[1],self.chi)]), X, axes = (1,1)).transpose(1,0,2) #to ensure the spin index is first
-                print("mid")
-                print(np.shape(X))
-                temp[:, :min(X_dim_new[1],self.chi), :min(X_dim_new[2],self.chi)] = X
-                self.Gamma_mat[i] = temp
-
-            #print(Y)    
-            self.Lambda_mat[i+1, :min(len(Y),self.chi)] = Y[:min(len(Y), self.chi)]
-
-            
-            prev_rank = X_dim[1]
-            print("end")
-            print(np.shape(Z))
-            #Z = Z[:prev_rank,:]
-            c = np.tensordot(np.diag(Y), Z, axes=(1,0))
-            print(np.shape(c))
-            """
-            Z = Z.T
-            Z_dim = np.shape(Z)
-            Z = Z.reshape((prev_rank, int(Z_dim[0]/prev_rank)*Z_dim[1] ))            
-            print(np.shape(np.diag(Y)))
-            print(np.shape(Z))
-            c = np.tensordot(np.diag(Y), Z, axes=(1,0))
-            """    
-        return     
     
+    
+    
+        
 
 ########################################################################################  
 
@@ -734,9 +667,6 @@ def main():
     #print(DENS1.Gamma_mat[0,0,0])  
     #print(DENS1.Gamma_mat[N-1,3,0])    
 
-    DENS1.full_contract()
-    #print(np.shape(DENS1.c))
-    DENS1.full_decompose()
 
     #print(DENS1.Gamma_mat[0,0,0])  
     #print(DENS1.Gamma_mat[N-1,3,0])  
@@ -746,7 +676,8 @@ def main():
     pure_desired_expectations.append(("Sz", Sz, False, 0))
     MPS1.time_evolution(TimeEvol_obj2, normalize, steps, pure_desired_expectations, False, False)
     """
-       
+    
+    """
     final_Sz = np.zeros(N)
     for i in range(N):
         final_Sz[i] = DENS1.expval(np.kron(Sz, np.eye(d)), i)
@@ -756,8 +687,7 @@ def main():
     plt.grid()
     plt.title(f"<Sz> for each site after {steps} steps with dt={dt}")
     plt.show()    
-
-    
+    """    
     pass
 
 main()
