@@ -327,7 +327,37 @@ class MPS:
         return
     
     
+    def full_re_orthogonalize(self):
+        for i in range(self.N):
+            self.site_re_orthogonalize(i)
+        pass
     
+    def site_re_orthogonalize(self, i):
+        
+        ### calculate R and L
+        temp = np.tensordot(self.Gamma_mat[i], np.diag(self.Lambda_mat[i+1]), axes=(2,0)) #(d, chi, chi)
+        R = np.tensordot(temp, np.conj(temp), axes=(0,0)).transpose(0,2,1,3)
+        
+        temp = np.tensordot(np.diag(self.Lambda_mat[i+1]), self.Gamma_mat[i], axes=(1,1)) #(chi, d, chi)
+        L = np.tensordot(temp, np.conj(temp), axes=(1,1)).transpose(0,2,1,3)
+        
+        
+        
+        
+        ### Calculate largest eigenvector and value of both
+        
+        ### Decompose eigenvectors into products
+        
+        ### Introduce products correctly through contractions
+        
+        ### SVD    -- new Lambda is obtained here
+        
+        ### Finish calculation to find new Gamma
+        
+        ### Update Lambda_mat and Gamma_mat --- TRUNCATE?
+        return
+            
+
     
         
 
@@ -537,6 +567,50 @@ def create_maxmixed_normstate():
     return NORM_state
 
 
+
+def arnoldi_method(A, n):
+    # Initializing objects
+    q_list = np.empty((0, chi))             # Q = q_list.T is the matrix containing Krylov basis vectors as columns
+    H = np.zeros((n+1,n+1), dtype=complex)  # The Hessenberg matrix, including a single additional row and column as passing for H[n+1,n]
+    
+    # Choosing random first vector b, normalizing it and adding it to q_list
+    b = np.random.rand(chi)
+    q = b/np.linalg.norm(b)
+    q_list = np.vstack((q_list, q))
+
+    #Arnoldi iteration
+    for i in range(n):
+        v = np.matmul(A, q_list[i])
+        for j in range(i+1):
+            H[j,i] = np.matmul( np.conj(q_list[j]), v)
+            v = v - H[j,i] * q_list[j] 
+        
+        H[i+1,i] = np.linalg.norm(v)
+        q = v / H[i+1,i]
+        q_list = np.vstack((q_list,q))
+    
+    """ The final form of the H is an n by n Hessenberg matrix, with a padding of zeros in each dimension, and one nonzero number at (n+1,n) """
+    H = H[:n,:n]
+    print()
+    print("Hessenberg matrix")
+    print(np.round(np.real(H), decimals=3))
+    
+    eigval, eigvec = np.linalg.eig(H)
+    print()
+    print(eigval)
+    #Find eigenvalues of Hessenberg matrix, these approximate the eigenvalues of A
+
+    
+    #Plug in the dominant eigenvalue into (A-lambda I) v = 0 to find dominant eigenvector v
+    
+    return
+    
+
+
+
+
+
+
 def calculate_thetas_singlesite(state):
     """ contracts lambda_i gamma_i lambda_i+1 (:= theta) for each site and returns them, used for the NORM_state """
     """ NOTE: only works for NORM_state since there the result is the same for all sites! """
@@ -571,7 +645,7 @@ newchi=20   #DENS truncation parameter
 
 im_steps = 0
 im_dt = -0.03j
-steps=10
+steps=400
 dt = 0.02
 
 normalize = False
@@ -651,7 +725,6 @@ def main():
     if save_state_bool:
         DENS1.store()
 
-    
 
     final_Sz = np.zeros(N)
     for i in range(N):
@@ -667,6 +740,7 @@ def main():
     #print(DENS1.Gamma_mat[0,0,0])  
     #print(DENS1.Gamma_mat[N-1,3,0])    
 
+    DENS1.site_re_orthogonalize(0)
 
     #print(DENS1.Gamma_mat[0,0,0])  
     #print(DENS1.Gamma_mat[N-1,3,0])  
