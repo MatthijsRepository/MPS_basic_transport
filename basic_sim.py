@@ -3,6 +3,7 @@ os.chdir("C:\\Users\\matth\\OneDrive\\Documents\\TUDelft\\MEP\\code\\MPS_basic_t
 
 import numpy as np
 from scipy.linalg import expm
+from scipy.sparse.linalg import eigs
 import matplotlib.pyplot as plt
 
 import pickle
@@ -333,20 +334,34 @@ class MPS:
         pass
     
     def site_re_orthogonalize(self, i):
-        
         ### calculate R and L
+        # Note: remember that the axis for Lambda_mat does not matter as it is a diagonal matrix 
         temp = np.tensordot(self.Gamma_mat[i], np.diag(self.Lambda_mat[i+1]), axes=(2,0)) #(d, chi, chi)
         R = np.tensordot(temp, np.conj(temp), axes=(0,0)).transpose(0,2,1,3)
+        R = np.reshape(R, (self.chi**2, self.chi**2)) # Reshape R into a matrix to allow calculation of eigenvectors
+        print(np.round(self.Gamma_mat[i,0], decimals=10))
+        print()
+        print()
+        print(np.round(R, decimals=10))
+        print()
         
         temp = np.tensordot(np.diag(self.Lambda_mat[i+1]), self.Gamma_mat[i], axes=(1,1)) #(chi, d, chi)
         L = np.tensordot(temp, np.conj(temp), axes=(1,1)).transpose(0,2,1,3)
+        L = np.reshape(L, (self.chi**2, self.chi**2)) # Reshape L into a matrix to allow calculation of eigenvectors
         
+        ### Calculate largest eigenvector and eigenvalue of R and L
+        eigval_R, V_R = eigs(R, k=1, which="LM", maxiter=None)  # Note, eigenvector contains an arbitrary phase factor
+        V_R = np.reshape(V_R[:,0], (self.chi, self.chi))        # Reshape the vector back into a matrix
+        V_R *= np.exp(-1j * np.angle(V_R[0,0]))                 # Apply an additional phase factor such that 0th diagonal element is real - ensures the matrix is Hermitian
         
+        eigval_L, V_L = eigs(L, k=1, which="LM", maxiter=None)  # Note, eigenvector contains an arbitrary phase value
+        V_L = np.reshape(V_L[:,0], (self.chi, self.chi))        # Reshape the vector back into a matrix
+        V_L *= np.exp(-1j * np.angle(V_L[0,0]))                 # Apply an additional phase factor such that 0th diagonal element is real - ensures the matrix is Hermitian
         
-        
-        ### Calculate largest eigenvector and value of both
-        
-        ### Decompose eigenvectors into products
+        ### Decompose eigenvectors into products - we can use Cholesky decomposition since V_R and V_L are Hermitian
+        print(np.round(V_R, decimals=13))           
+        X = np.linalg.cholesky(V_R)     # V_R = X * X.H
+        Y = np.linalg.cholesky(V_L)     # V_L = Y * Y.H
         
         ### Introduce products correctly through contractions
         
@@ -570,7 +585,7 @@ def create_maxmixed_normstate():
 
 def arnoldi_method(A, n):
     # Initializing objects
-    q_list = np.empty((0, chi))             # Q = q_list.T is the matrix containing Krylov basis vectors as columns
+    q_list = np.empty((0, chi))             # V_k = q_list.T is the matrix containing Krylov basis vectors as columns
     H = np.zeros((n+1,n+1), dtype=complex)  # The Hessenberg matrix, including a single additional row and column as passing for H[n+1,n]
     
     # Choosing random first vector b, normalizing it and adding it to q_list
@@ -584,12 +599,11 @@ def arnoldi_method(A, n):
         for j in range(i+1):
             H[j,i] = np.matmul( np.conj(q_list[j]), v)
             v = v - H[j,i] * q_list[j] 
-        
         H[i+1,i] = np.linalg.norm(v)
         q = v / H[i+1,i]
         q_list = np.vstack((q_list,q))
     
-    """ The final form of the H is an n by n Hessenberg matrix, with a padding of zeros in each dimension, and one nonzero number at (n+1,n) """
+    # The final form of the H is an n by n Hessenberg matrix, with a padding of zeros in each dimension, and one nonzero number at (n+1,n)
     H = H[:n,:n]
     print()
     print("Hessenberg matrix")
@@ -638,10 +652,10 @@ def calculate_thetas_twosite(state):
 ####################################################################################
 t0 = time.time()
 #### Simulation variables
-N=4
+N=5
 d=2
 chi=10      #MPS truncation parameter
-newchi=20   #DENS truncation parameter
+newchi=15   #DENS truncation parameter
 
 im_steps = 0
 im_dt = -0.03j
@@ -740,7 +754,7 @@ def main():
     #print(DENS1.Gamma_mat[0,0,0])  
     #print(DENS1.Gamma_mat[N-1,3,0])    
 
-    DENS1.site_re_orthogonalize(0)
+    DENS1.site_re_orthogonalize(1)
 
     #print(DENS1.Gamma_mat[0,0,0])  
     #print(DENS1.Gamma_mat[N-1,3,0])  
