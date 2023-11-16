@@ -10,6 +10,8 @@ import pickle
 import time
 from datetime import datetime
 
+from MPS_inits import initialize_halfstate, initialize_LU_RD
+
 
 ########################################################################################################
 
@@ -63,49 +65,6 @@ class MPS:
         self.Gamma_mat[site,:,:,:] = matrix
         return   
     
-    def initialize_halfstate(self):
-        """ Initializes the MPS into a product state of uniform eigenstates """
-        self.Lambda_mat[:,0] = 1
-        self.Gamma_mat[:,:,0,0] = 1/np.sqrt(self.d)
-        
-        #self.locsize[:,:] = 1
-        arr = np.arange(0,self.N+1)
-        arr = np.minimum(arr, self.N-arr)
-        arr = np.minimum(arr,self.chi)               # For large L, d**arr returns negative values, this line prohibits this effect
-        self.locsize = np.minimum(self.d**arr, self.chi)
-        return
-    
-    def initialize_flipstate(self):
-        """ Initializes the MPS into a product of alternating up/down states """
-        self.Lambda_mat[:,0] = 1
-        for i in range(self.N):
-            if (i%2==0):
-                self.Gamma_mat[i,0,0,0] = 1
-            else:
-                self.Gamma_mat[i,self.d-1,0,0] = 1
-               
-        #self.locsize[:,:] = 1
-        arr = np.arange(0,self.N+1)
-        arr = np.minimum(arr, self.N-arr)
-        arr = np.minimum(arr,self.chi)               # For large L, d**arr returns negative values, this line prohibits this effect
-        self.locsize = np.minimum(self.d**arr, self.chi)
-        return 
-    
-    def initialize_up_or_down(self, up):
-        """ Initializes the MPS into a product state of up or down states """
-        if up:  #initialize each spin in up state
-            i=0 
-        else:   #initialize each spin in down state
-            i=self.d-1
-        self.Lambda_mat[:,0] = 1
-        self.Gamma_mat[:,i,0,0] = 1
-        
-        arr = np.arange(0,self.N+1)
-        arr = np.minimum(arr, self.N-arr)
-        arr = np.minimum(arr,self.chi)               # For large L, d**arr returns negative values, this line prohibits this effect
-        self.locsize = np.minimum(self.d**arr, self.chi)
-        return
-    
     def construct_vidal_supermatrices(self, newchi):
         """ Constructs a superket of the density operator in Vidal decomposition """
         sup_Gamma_mat = np.zeros((self.N, self.d**2, newchi, newchi), dtype=complex)
@@ -134,7 +93,7 @@ class MPS:
         theta_prime = np.tensordot(theta_prime, np.diag(inv_lambdas), axes=(1,0)) #(chi, d, chi)
         self.Gamma_mat[i,:,:,:] = np.transpose(theta_prime, (1,0,2))
         return
-       
+
     def apply_twosite(self, TimeOp, i, normalize):
         """ Applies a two-site operator to sites i and i+1 """
         #First the matrices lambda-i to lambda-i+2 are contracted
@@ -143,7 +102,7 @@ class MPS:
         theta = np.tensordot(theta, self.Gamma_mat[i+1,:,:,:],axes=(2,1)) #(chi,d,d,chi)
         theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+2,:]), axes=(3,0)) #(chi, d, d, chi)
         #operator is applied, tensor is reshaped
-        theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3])) #(chi,chi,d,d)              # Two-site operator
+        theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3])) #(chi,chi,d,d)              # Two-site operator        
         theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d*self.chi, self.d*self.chi)) #first to (d, chi, d, chi), then (d*chi, d*chi)
         X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
         
@@ -339,11 +298,12 @@ class MPS:
         temp = np.tensordot(self.Gamma_mat[i], np.diag(self.Lambda_mat[i+1]), axes=(2,0)) #(d, chi, chi)
         R = np.tensordot(temp, np.conj(temp), axes=(0,0)).transpose(0,2,1,3)
         R = np.reshape(R, (self.chi**2, self.chi**2)) # Reshape R into a matrix to allow calculation of eigenvectors
-        print(np.round(self.Gamma_mat[i,0], decimals=10))
-        print()
-        print()
-        print(np.round(R, decimals=10))
-        print()
+        
+        #print(np.round(self.Gamma_mat[i,0], decimals=10))
+        #print()
+        #print()
+        #print(np.round(R, decimals=10))
+        #print()
         
         temp = np.tensordot(np.diag(self.Lambda_mat[i+1]), self.Gamma_mat[i], axes=(1,1)) #(chi, d, chi)
         L = np.tensordot(temp, np.conj(temp), axes=(1,1)).transpose(0,2,1,3)
@@ -359,13 +319,37 @@ class MPS:
         V_L *= np.exp(-1j * np.angle(V_L[0,0]))                 # Apply an additional phase factor such that 0th diagonal element is real - ensures the matrix is Hermitian
         
         ### Decompose eigenvectors into products - we can use Cholesky decomposition since V_R and V_L are Hermitian
-        print(np.round(V_R, decimals=13))           
-        X = np.linalg.cholesky(V_R)     # V_R = X * X.H
-        Y = np.linalg.cholesky(V_L)     # V_L = Y * Y.H
+        #print(np.round(V_R, decimals=13))           
+        #X = np.linalg.cholesky(V_R)     # V_R = X * X.H
+        #Y = np.linalg.cholesky(V_L)     # V_L = Y * Y.H
+        XR, YR, ZR = np.linalg.svd(V_R) #; ZR = ZR.T
+        XL, YL, ZL = np.linalg.svd(V_L) #; ZL = ZL.T
         
+        X = np.matmul(XR, np.diag(np.sqrt(YR)))     # Note: Now V_R != X * X.H
+        Y = np.matmul(XL, np.diag(np.sqrt(YL)))     # Note: Now V_L != Y * Y.H
+
+        
+        XR_test = np.matmul(X, np.conj(X.T))
+        difference = V_R - XR_test
+        difference = np.round(difference, decimals=15)
+        print(difference[np.nonzero(difference)])        
+
         ### Introduce products correctly through contractions
         
+        temp_1 = np.matmul(np.matmul(Y.T, np.diag(self.Lambda_mat[i])), X)     # Bond index to the left of site
+        
+        #test = np.matmul(temp_1, np.conj(np.transpose(temp_1)))
+        #A = np.round(test-X, decimals=4)
+        #print(A[np.nonzero(A)])
+        
+        temp_2 = np.matmul(np.matmul(Y.T, np.diag(self.Lambda_mat[i+1])), X)   # Bond index to the right of site
+        
         ### SVD    -- new Lambda is obtained here
+        X1, Y1, Z1 = np.linalg.svd(temp_1) ; Z1 = Z1.T
+        X2, Y2, Z2 = np.linalg.svd(temp_2) ; Z2 = Z2.T
+        
+        # ---- Are the lambdas updated twice?   --Here the lambda matrices should be updated with Y1 and/or Y2
+        self.Lambda_mat[i+1,:] = Y2
         
         ### Finish calculation to find new Gamma
         
@@ -622,9 +606,6 @@ def arnoldi_method(A, n):
 
 
 
-
-
-
 def calculate_thetas_singlesite(state):
     """ contracts lambda_i gamma_i lambda_i+1 (:= theta) for each site and returns them, used for the NORM_state """
     """ NOTE: only works for NORM_state since there the result is the same for all sites! """
@@ -652,7 +633,7 @@ def calculate_thetas_twosite(state):
 ####################################################################################
 t0 = time.time()
 #### Simulation variables
-N=5
+N=10
 d=2
 chi=10      #MPS truncation parameter
 newchi=15   #DENS truncation parameter
@@ -720,9 +701,9 @@ def main():
         DENS1 = load_state(loadstate_folder, loadstate_filename, 1)
     else:
         MPS1 = MPS(1, N,d,chi, False)
-        MPS1.initialize_halfstate()
-        #MPS1.initialize_flipstate()
-        #MPS1.initialize_up_or_down(False) 
+        #MPS1.Gamma_mat[:,:,:,:], MPS1.Lambda_mat[:,:], MPS1.locsize[:] = initialize_halfstate(N,d,chi)
+        MPS1.Gamma_mat[:,:,:,:], MPS1.Lambda_mat[:,:], MPS1.locsize[:] = initialize_LU_RD(N,d,chi)
+        
         DENS1 = create_superket(MPS1, newchi)
     
     #creating time evolution object
@@ -754,7 +735,7 @@ def main():
     #print(DENS1.Gamma_mat[0,0,0])  
     #print(DENS1.Gamma_mat[N-1,3,0])    
 
-    DENS1.site_re_orthogonalize(1)
+    DENS1.site_re_orthogonalize(2)
 
     #print(DENS1.Gamma_mat[0,0,0])  
     #print(DENS1.Gamma_mat[N-1,3,0])  
