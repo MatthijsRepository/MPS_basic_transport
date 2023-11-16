@@ -59,33 +59,16 @@ def initialize_LU_RD(N, d, chi, scale_factor):
     
     Lambda_mat[:,0] = 1
     
-    #temp = np.arange(N)/N * scale_factor
-    temp1 = np.arange(N)/N * scale_factor
-    Gamma_mat[:,0,0,0] = np.sqrt(temp1)
-    Gamma_mat[:,d-1,0,0] = np.sqrt(temp2)
+    temp = 1-np.arange(N)/(N-1)
+    temp = temp-0.5
+    
+    
+    Gamma_mat[:,0,0,0] = np.sqrt(temp*scale_factor + 0.5)
+    Gamma_mat[:,d-1,0,0] = np.sqrt(-1*temp*scale_factor + 0.5)
     
     arr = np.arange(0,N+1)
     arr = np.minimum(arr, N-arr)
     arr = np.minimum(arr,chi)               # For large L, d**arr returns negative values, this line prohibits this effect
     locsize = np.minimum(d**arr, chi)
     return Gamma_mat, Lambda_mat, locsize
-    
-    
-L = 11
-f = 0.9
-
-a = np.arange(L)/(L-1)*f
-b = 1-a
-
-
-#b = np.arange(L-1,-1,-1)/(L-1) * f
-
-print("test")
-print(b)
-print(a)
-
-print(b+a)
-
-
-
-
+ 

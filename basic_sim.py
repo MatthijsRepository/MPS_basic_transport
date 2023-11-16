@@ -640,7 +640,7 @@ newchi=15   #DENS truncation parameter
 
 im_steps = 0
 im_dt = -0.03j
-steps=750
+steps=100
 dt = 0.02
 
 normalize = False
