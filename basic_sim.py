@@ -10,7 +10,7 @@ import pickle
 import time
 from datetime import datetime
 
-from MPS_inits import initialize_halfstate, initialize_LU_RD
+from MPS_initializations import initialize_halfstate, initialize_LU_RD
 
 
 ########################################################################################################
@@ -640,7 +640,7 @@ newchi=15   #DENS truncation parameter
 
 im_steps = 0
 im_dt = -0.03j
-steps=400
+steps=750
 dt = 0.02
 
 normalize = False
@@ -702,7 +702,7 @@ def main():
     else:
         MPS1 = MPS(1, N,d,chi, False)
         #MPS1.Gamma_mat[:,:,:,:], MPS1.Lambda_mat[:,:], MPS1.locsize[:] = initialize_halfstate(N,d,chi)
-        MPS1.Gamma_mat[:,:,:,:], MPS1.Lambda_mat[:,:], MPS1.locsize[:] = initialize_LU_RD(N,d,chi)
+        MPS1.Gamma_mat[:,:,:,:], MPS1.Lambda_mat[:,:], MPS1.locsize[:] = initialize_LU_RD(N,d,chi, scale_factor = 0.6)
         
         DENS1 = create_superket(MPS1, newchi)
     
