@@ -207,24 +207,35 @@ class MPS:
             m_total = np.tensordot(m_total,mp,axes=([0,1],[0,2]))    
         return abs(m_total[0,0])
     
-    def time_evolution(self, TimeEvol_obj, normalize, steps, desired_expectations, track_normalization, track_energy):
+    def calculate_norm(self):
+        """ Calculates the norm of the MPS """
+        if self.is_density:
+            return self.calculate_vidal_inner(NORM_state)
+        else: 
+            return self.calculate_vidal_inner(self)
+    
+    def time_evolution(self, TimeEvol_obj, normalize, steps, desired_expectations, track_normalization, track_energy, track_current):
         if TimeEvol_obj.is_density != self.is_density:
             print("Error: time evolution operator type does not match state type (MPS/DENS)")
             return
+        
+        #### Initializing operators and expectation value arrays
+        
+        TimeOp = TimeEvol_obj.TimeOp
+        Diss_arr = TimeEvol_obj.Diss_arr
+        Diss_bool = TimeEvol_obj.Diss_bool
         
         if track_normalization:
             Normalization = np.zeros(steps)
         if track_energy:
             energy = np.zeros(steps)
+        if (track_current==True and Diss_bool==True):
+            if steps>current_cutoff:
+                spin_current_values = np.zeros(steps-current_cutoff)
+        
         exp_values = np.ones((len(desired_expectations), self.N, steps)) #array to store expectation values in
-        
-        if steps>current_cutoff:
-            spin_current_values = np.zeros(steps-current_cutoff)
-        
-        TimeOp = TimeEvol_obj.TimeOp
-        Diss_arr = TimeEvol_obj.Diss_arr
-        Diss_bool = TimeEvol_obj.Diss_bool
-
+                    
+        #### Time evolution steps
         
         print(f"Starting time evolution of {self.name}")
         for t in range(steps):
@@ -232,13 +243,13 @@ class MPS:
                 print(t)
             
             if track_normalization:
-                if self.is_density:
-                    Normalization[t] = self.calculate_vidal_inner(NORM_state)
-                else: 
-                    Normalization[t] = self.calculate_vidal_inner(self)
+                Normalization[t] = self.calculate_norm()
             if track_energy:
                 energy[t] = self.calculate_energy(TimeEvol_obj)
-            
+            if (track_current==True and Diss_bool==True):
+                if t>=current_cutoff:
+                    spin_current_values[t-current_cutoff] = self.expval_twosite(spin_current_op, round(self.N/2-1))
+                          
             for i in range(len(desired_expectations)):
                 if desired_expectations[i][2] == True:
                     exp_values[i,:,t] *= self.expval(desired_expectations[i][1], desired_expectations[i][3])
@@ -247,10 +258,9 @@ class MPS:
                                     
             self.TEBD(TimeOp, Diss_arr, normalize, Diss_bool)
                         
-            #if (t>current_cutoff and Diss_bool==True):
-                #spin_current_values[t-current_cutoff] = self.expval_twosite(spin_current_op, round(self.N/2))
         
-        #### Plotting takes place here
+        #### Plotting expectation values
+        
         time_axis = np.arange(steps)*abs(TimeEvol_obj.dt)
         
         if track_normalization:
@@ -267,6 +277,11 @@ class MPS:
             plt.ylabel("Energy")
             plt.grid()
             plt.show()
+        
+        if track_current:
+            print("Time averaged spin current through middle site:")
+            print((np.average(spin_current_values)))
+            print(spin_current_values)
 
         for i in range(len(desired_expectations)):
             if desired_expectations[i][2]==False:
@@ -281,12 +296,30 @@ class MPS:
             plt.title(f"Plot of <{desired_expectations[i][0]}> of {self.name} over time")
             plt.grid()
             plt.show()
-                   
-        print("Time averaged spin current through middle site:")
-        print((np.average(spin_current_values)))
         return
     
+    def force_normalization(self):
+        global renormalization_type
+        if self.is_density==False:
+            print("This function only works for DENS type objects")
+            return
+        normalization = self.calculate_norm()
+        if renormalization_type==0: # Rescale lambdas
+            site_rescale_factor = (1/normalization)**(1/(self.N-1))
+            self.Lambda_mat[1:N] *= site_rescale_factor
+        if renormalization_type==1: # Rescale gammas        
+            site_rescale_factor = (1/normalization)**(1/self.N)
+            self.Gamma_mat *= site_rescale_factor
+        return
     
+    """
+    def iterative_re_orthogonalize(self, sweeps):
+        Op = np.ones((self.N-1, self.d,self.d,self.d,self.d)) * np.eye(self.d**2).reshape(self.d, self.d, self.d, self.d)
+        for i in range(sweeps):
+            self.TEBD(Op, Diss_arr=None, normalize=False, Diss_bool=False)
+            print(self.calculate_vidal_inner(NORM_state))            
+        return
+            
     def full_re_orthogonalize(self):
         for i in range(self.N):
             self.site_re_orthogonalize(i)
@@ -355,6 +388,7 @@ class MPS:
         
         ### Update Lambda_mat and Gamma_mat --- TRUNCATE?
         return
+    """
             
 
     
@@ -635,8 +669,8 @@ t0 = time.time()
 #### Simulation variables
 N=10
 d=2
-chi=10      #MPS truncation parameter
-newchi=15   #DENS truncation parameter
+chi=20      #MPS truncation parameter
+newchi=20   #DENS truncation parameter
 
 im_steps = 0
 im_dt = -0.03j
@@ -646,6 +680,7 @@ dt = 0.02
 normalize = False
 use_CN = False #choose if you want to use Crank-Nicolson approximation
 Diss_bool = True
+renormalization_type = 1        # 0 for lambdas, 1 for gammas
 
 
 #### Hamiltonian and Lindblad constants
@@ -666,7 +701,7 @@ Sz = np.array([[1,0],[0,-1]])
 
 
 #### Spin current operator and cutoff factor
-cutoff_factor = 0
+cutoff_factor = 0.8
 current_cutoff=round(steps * cutoff_factor) 
 spin_current_op = np.kron( np.kron(Sx, np.eye(d)) , np.kron(Sy, np.eye(d))) - np.kron( np.kron(Sy, np.eye(d)) , np.kron(Sx, np.eye(d)))
 #equivalent operator in terms of Sp and Sm
@@ -702,7 +737,7 @@ def main():
     else:
         MPS1 = MPS(1, N,d,chi, False)
         #MPS1.Gamma_mat[:,:,:,:], MPS1.Lambda_mat[:,:], MPS1.locsize[:] = initialize_halfstate(N,d,chi)
-        MPS1.Gamma_mat[:,:,:,:], MPS1.Lambda_mat[:,:], MPS1.locsize[:] = initialize_LU_RD(N,d,chi, scale_factor = 0.6)
+        MPS1.Gamma_mat[:,:,:,:], MPS1.Lambda_mat[:,:], MPS1.locsize[:] = initialize_LU_RD(N,d,chi, scale_factor = 0.7)
         
         DENS1 = create_superket(MPS1, newchi)
     
@@ -715,7 +750,7 @@ def main():
     #desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), True, 1))
     
     #time evolution of the state
-    DENS1.time_evolution(TimeEvol_obj1, normalize, steps, desired_expectations, True, False)
+    DENS1.time_evolution(TimeEvol_obj1, normalize, steps, desired_expectations, True, False, True)
     
     if save_state_bool:
         DENS1.store()
@@ -735,7 +770,36 @@ def main():
     #print(DENS1.Gamma_mat[0,0,0])  
     #print(DENS1.Gamma_mat[N-1,3,0])    
 
-    DENS1.site_re_orthogonalize(2)
+
+    expval1 = DENS1.expval_twosite(spin_current_op, int(N/2-1))
+    
+    #DENS1.site_re_orthogonalize(2)
+    DENS1.force_normalization(DENS1.calculate_vidal_inner(NORM_state))
+    #DENS1.iterative_re_orthogonalize(sweeps=20)
+    
+    print()
+    expval2 = DENS1.expval_twosite(spin_current_op, int(N/2-1))
+    
+    print(expval1)
+    print(expval2)
+    
+    
+    new_final_Sz = np.zeros(N)
+    for i in range(N):
+        new_final_Sz[i] = DENS1.expval(np.kron(Sz, np.eye(d)), i)
+    plt.plot(final_Sz, linestyle="", marker=".")
+    plt.xlabel("Site")
+    plt.ylabel("<Sz>")
+    plt.grid()
+    plt.title(f"<Sz> for each site after {steps} steps with dt={dt}")
+    plt.show() 
+    
+    print(final_Sz - new_final_Sz)
+    
+    
+    DENS1.time_evolution(TimeEvol_obj1, normalize, int(steps/10), desired_expectations, True, False, True)
+
+
 
     #print(DENS1.Gamma_mat[0,0,0])  
     #print(DENS1.Gamma_mat[N-1,3,0])  
