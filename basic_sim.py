@@ -151,12 +151,12 @@ class MPS:
         #"""
         #NOTE:  for singlesite expectations the expectation <<p |A| p>> matches the result for pure state evolutions
         #        hence that specific expectation should be used
-        if self.is_density:     #In case of density matrices we must take the trace           
+        if 1==2:#self.is_density:     #In case of density matrices we must take the trace           
             theta_I = NORM_state.singlesite_thetas
             return np.real(np.tensordot(theta_prime, np.conj(theta_I), axes=([0,1,2],[2,1,0])))
         else:
         #"""
-            return np.real(np.tensordot(theta_prime, np.conj(theta), axes=([0,1,2],[2,1,0])))
+            return np.real(np.tensordot(theta_prime, np.conj(theta), axes=([0,1,2],[0,2,1])))
     
     def expval_chain(self, Op):
         """ calculates expectation value for operator Op for the entire chain """
@@ -174,7 +174,7 @@ class MPS:
         Op = np.reshape(Op, (self.d,self.d,self.d,self.d))
         theta_prime = np.tensordot(theta, Op,axes=([1,2],[2,3])) #(chi,chi,d,d) 
         #"""
-        if self.is_density:
+        if 1==2:#self.is_density:
             theta_I = NORM_state.twosite_thetas
             return np.tensordot(theta_prime, theta_I, axes=([0,1,2,3],[3,0,1,2]))
         else:
@@ -672,14 +672,14 @@ def calculate_thetas_twosite(state):
 ####################################################################################
 t0 = time.time()
 #### Simulation variables
-N=5
+N=7
 d=2
 chi=20      #MPS truncation parameter
 newchi=20   #DENS truncation parameter
 
 im_steps = 0
 im_dt = -0.03j
-steps=120
+steps=100
 dt = 0.02
 
 normalize = False
