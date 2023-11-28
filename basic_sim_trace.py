@@ -191,14 +191,12 @@ class MPS:
         Op = np.reshape(Op, (self.d,self.d,self.d,self.d))
         theta_prime = np.tensordot(theta, Op,axes=([1,2],[2,3])) #(chi,chi,d,d) 
         #"""
-        if 1==2:#self.is_density:
+        if self.is_density:
             theta_I = NORM_state.twosite_thetas
             #theta_I = np.tensordot(np.diag(NORM_state.Lambda_mat[site,:]), NORM_state.Gamma_mat[site,:,:,:], axes=(1,1))  #(chi, chi, d) -> (chi, d, chi)
             #theta_I = np.tensordot(theta_I,np.diag(NORM_state.Lambda_mat[site+1,:]),axes=(2,0)) #(chi, d, chi) 
             #theta_I = np.tensordot(theta_I, NORM_state.Gamma_mat[site+1,:,:,:],axes=(2,1)) #(chi, d, chi, d) -> (chi,d,d,chi)
             #theta_I = np.tensordot(theta_I,np.diag(NORM_state.Lambda_mat[site+2,:]), axes=(3,0)) #(chi, d, d, chi)
-            print(np.shape(theta_prime))
-            print(np.shape(theta_I))
             return np.tensordot(theta_prime, theta_I, axes=([0,1,2,3],[0,3,1,2]))
         else:
             #pass
@@ -276,7 +274,8 @@ class MPS:
                 energy[t] = self.calculate_energy(TimeEvol_obj)
             if (track_current==True and Diss_bool==True):
                 if t>=current_cutoff:
-                    spin_current_values[t-current_cutoff] = self.expval_twosite(spin_current_op, round(self.N/2-1))
+                    middle_site = int(np.round(self.N/2-1))
+                    spin_current_values[t-current_cutoff] = self.flipped_factor[middle_site] * self.flipped_factor[middle_site+1] * np.real( self.expval_twosite(spin_current_op, middle_site) )
             """              
             for i in range(len(desired_expectations)):
                 if desired_expectations[i][2] == True:
@@ -727,7 +726,7 @@ newchi=20   #DENS truncation parameter
 
 im_steps = 0
 im_dt = -0.03j
-steps=100
+steps=500
 dt = 0.02
 
 normalize = False
