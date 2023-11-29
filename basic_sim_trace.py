@@ -259,10 +259,12 @@ class MPS:
             if (t%20==0):
                 print(t)
             
-            Sz_expvals[:,t] = self.expval_chain(np.kron(Sz,np.eye(d)))
+            #Sz_expvals[:,t] = self.expval_chain(np.kron(Sz,np.eye(d)))
+            for i in range(self.N):
+                Sz_expvals[i,t] = self.expval(np.kron(Sz, np.eye(d)), i)
             if (t>=1):
                 Sz_expvals[:,t] *= self.flipped_factor
-                sign_flips = self.sign_flip_check(Sz_expvals[:,t-1:t+1])
+                sign_flips = self.sign_flip_check(Sz_expvals[:,t-1:t+1].copy())
                 Sz_expvals[sign_flips,t] *= -1
                 
             
@@ -327,6 +329,7 @@ class MPS:
             plt.ylabel("Current")
             plt.grid()
             plt.show()
+            print(spin_current_values[-1])
 
         
 
@@ -719,19 +722,19 @@ def calculate_thetas_twosite(state):
 ####################################################################################
 t0 = time.time()
 #### Simulation variables
-N=7
+N=3
 d=2
 chi=20      #MPS truncation parameter
 newchi=20   #DENS truncation parameter
 
 im_steps = 0
 im_dt = -0.03j
-steps=500
+steps=200
 dt = 0.02
 
 normalize = False
 use_CN = False #choose if you want to use Crank-Nicolson approximation
-Diss_bool = True
+Diss_bool = False #True
 renormalization_type = 0        # 0 for lambdas, 1 for gammas
 
 flip_threshold = 0.01 #Threshold below which an <Sz> sign flip is not flagged as being caused by the SVD
@@ -770,7 +773,7 @@ NORM_state.twosite_thetas = calculate_thetas_twosite(NORM_state)
 
 #### Loading and saving states
 loadstate_folder = "data\\"
-loadstate_filename = "1126_1634_DENS1_N7_chi20.pkl"
+loadstate_filename = "1128_1913_DENS1_N10_chi30.pkl"
 
 save_state_bool = False
 load_state_bool = False
@@ -814,7 +817,7 @@ def main():
     
     #time evolution of the state
     DENS1.time_evolution(TimeEvol_obj1, normalize, steps, desired_expectations, True, True, True)
- 
+    #MPS1.time_evolution(TimeEvol_obj2, normalize, steps, desired_expectations, False, True, False)
         
 
     #a=DENS1.Gamma_mat[1,0,:4,:16].copy()

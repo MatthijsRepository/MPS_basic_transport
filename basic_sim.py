@@ -274,7 +274,7 @@ class MPS:
             plt.grid()
             plt.show()
         
-        if track_current:
+        if (track_current and Diss_bool):
             print("Time averaged spin current through middle site:")
             print((np.average(spin_current_values)))
             plt.plot(spin_current_values)
@@ -672,19 +672,19 @@ def calculate_thetas_twosite(state):
 ####################################################################################
 t0 = time.time()
 #### Simulation variables
-N=7
+N=3
 d=2
 chi=20      #MPS truncation parameter
 newchi=20   #DENS truncation parameter
 
 im_steps = 0
 im_dt = -0.03j
-steps=100
+steps=200
 dt = 0.02
 
 normalize = False
 use_CN = False #choose if you want to use Crank-Nicolson approximation
-Diss_bool = True
+Diss_bool = False
 renormalization_type = 0        # 0 for lambdas, 1 for gammas
 
 
@@ -723,7 +723,7 @@ NORM_state.twosite_thetas = calculate_thetas_twosite(NORM_state)
 loadstate_folder = "data\\"
 loadstate_filename = "1124_1346_DENS1_N20_chi30.pkl"
 
-save_state_bool = True
+save_state_bool = False
 load_state_bool = False
 
 
