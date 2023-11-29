@@ -366,88 +366,7 @@ class MPS:
             site_rescale_factor = (1/normalization)**(1/self.N)
             self.Gamma_mat *= site_rescale_factor
         return
-    
-    """
-    def iterative_re_orthogonalize(self, sweeps):
-        Op = np.ones((self.N-1, self.d,self.d,self.d,self.d)) * np.eye(self.d**2).reshape(self.d, self.d, self.d, self.d)
-        for i in range(sweeps):
-            self.TEBD(Op, Diss_arr=None, normalize=False, Diss_bool=False)
-            print(self.calculate_vidal_inner(NORM_state))            
-        return
-            
-    def full_re_orthogonalize(self):
-        for i in range(self.N):
-            self.site_re_orthogonalize(i)
-        pass
-    
-    def site_re_orthogonalize(self, i):
-        ### calculate R and L
-        # Note: remember that the axis for Lambda_mat does not matter as it is a diagonal matrix 
-        temp = np.tensordot(self.Gamma_mat[i], np.diag(self.Lambda_mat[i+1]), axes=(2,0)) #(d, chi, chi)
-        R = np.tensordot(temp, np.conj(temp), axes=(0,0)).transpose(0,2,1,3)
-        R = np.reshape(R, (self.chi**2, self.chi**2)) # Reshape R into a matrix to allow calculation of eigenvectors
-        
-        #print(np.round(self.Gamma_mat[i,0], decimals=10))
-        #print()
-        #print()
-        #print(np.round(R, decimals=10))
-        #print()
-        
-        temp = np.tensordot(np.diag(self.Lambda_mat[i+1]), self.Gamma_mat[i], axes=(1,1)) #(chi, d, chi)
-        L = np.tensordot(temp, np.conj(temp), axes=(1,1)).transpose(0,2,1,3)
-        L = np.reshape(L, (self.chi**2, self.chi**2)) # Reshape L into a matrix to allow calculation of eigenvectors
-        
-        ### Calculate largest eigenvector and eigenvalue of R and L
-        eigval_R, V_R = eigs(R, k=1, which="LM", maxiter=None)  # Note, eigenvector contains an arbitrary phase factor
-        V_R = np.reshape(V_R[:,0], (self.chi, self.chi))        # Reshape the vector back into a matrix
-        V_R *= np.exp(-1j * np.angle(V_R[0,0]))                 # Apply an additional phase factor such that 0th diagonal element is real - ensures the matrix is Hermitian
-        
-        eigval_L, V_L = eigs(L, k=1, which="LM", maxiter=None)  # Note, eigenvector contains an arbitrary phase value
-        V_L = np.reshape(V_L[:,0], (self.chi, self.chi))        # Reshape the vector back into a matrix
-        V_L *= np.exp(-1j * np.angle(V_L[0,0]))                 # Apply an additional phase factor such that 0th diagonal element is real - ensures the matrix is Hermitian
-        
-        ### Decompose eigenvectors into products - we can use Cholesky decomposition since V_R and V_L are Hermitian
-        #print(np.round(V_R, decimals=13))           
-        #X = np.linalg.cholesky(V_R)     # V_R = X * X.H
-        #Y = np.linalg.cholesky(V_L)     # V_L = Y * Y.H
-        XR, YR, ZR = np.linalg.svd(V_R) #; ZR = ZR.T
-        XL, YL, ZL = np.linalg.svd(V_L) #; ZL = ZL.T
-        
-        X = np.matmul(XR, np.diag(np.sqrt(YR)))     # Note: Now V_R != X * X.H
-        Y = np.matmul(XL, np.diag(np.sqrt(YL)))     # Note: Now V_L != Y * Y.H
-
-        
-        XR_test = np.matmul(X, np.conj(X.T))
-        difference = V_R - XR_test
-        difference = np.round(difference, decimals=15)
-        print(difference[np.nonzero(difference)])        
-
-        ### Introduce products correctly through contractions
-        
-        temp_1 = np.matmul(np.matmul(Y.T, np.diag(self.Lambda_mat[i])), X)     # Bond index to the left of site
-        
-        #test = np.matmul(temp_1, np.conj(np.transpose(temp_1)))
-        #A = np.round(test-X, decimals=4)
-        #print(A[np.nonzero(A)])
-        
-        temp_2 = np.matmul(np.matmul(Y.T, np.diag(self.Lambda_mat[i+1])), X)   # Bond index to the right of site
-        
-        ### SVD    -- new Lambda is obtained here
-        X1, Y1, Z1 = np.linalg.svd(temp_1) ; Z1 = Z1.T
-        X2, Y2, Z2 = np.linalg.svd(temp_2) ; Z2 = Z2.T
-        
-        # ---- Are the lambdas updated twice?   --Here the lambda matrices should be updated with Y1 and/or Y2
-        self.Lambda_mat[i+1,:] = Y2
-        
-        ### Finish calculation to find new Gamma
-        
-        ### Update Lambda_mat and Gamma_mat --- TRUNCATE?
-        return
-    """
-            
-
-    
-        
+       
 
 ########################################################################################  
 
@@ -567,14 +486,14 @@ class Time_Operator:
         """ Lind_Op is shape (k,d,d) or (d,d) -- the k-index is in case multiple different lindblad operators act on a single site """
         Diss = np.zeros((self.d**2, self.d**2), dtype=complex)
         if Lind_Op.ndim==2:     #If only a single operator is given, this matrix is used
-            Diss += np.kron(Lind_Op, np.conj(Lind_Op))
-            Diss -= 1/2* np.kron(np.matmul(np.conj(np.transpose(Lind_Op)), Lind_Op), np.eye(self.d))
-            Diss -= 1/2* np.kron(np.eye(self.d), np.matmul(np.transpose(Lind_Op), np.conj(Lind_Op)))
+            Diss += 2*np.kron(Lind_Op, np.conj(Lind_Op))
+            Diss -= np.kron(np.matmul(np.conj(np.transpose(Lind_Op)), Lind_Op), np.eye(self.d))
+            Diss -= np.kron(np.eye(self.d), np.matmul(np.transpose(Lind_Op), np.conj(Lind_Op)))
         else:                   #If multiple matrices are given, the sum of Lindblad operators is used
             for i in range(np.shape(Lind_Op)[0]):
-                Diss += np.kron(Lind_Op[i], np.conj(Lind_Op[i]))
-                Diss -= 1/2* np.kron(np.matmul(np.conj(np.transpose(Lind_Op[i])), Lind_Op[i]), np.eye(self.d))
-                Diss -= 1/2* np.kron(np.eye(self.d), np.matmul(np.transpose(Lind_Op[i]), np.conj(Lind_Op[i])))
+                Diss += 2*np.kron(Lind_Op[i], np.conj(Lind_Op[i]))
+                Diss -= np.kron(np.matmul(np.conj(np.transpose(Lind_Op[i])), Lind_Op[i]), np.eye(self.d))
+                Diss -= np.kron(np.eye(self.d), np.matmul(np.transpose(Lind_Op[i]), np.conj(Lind_Op[i])))
         return Diss
     
     def Create_Diss_Array(self, s_coup):
@@ -654,47 +573,7 @@ def create_maxmixed_normstate():
     NORM_state.set_Gamma_Lambda(gammas, lambdas, locsize)
     return NORM_state
 
-
-
-def arnoldi_method(A, n):
-    # Initializing objects
-    q_list = np.empty((0, chi))             # V_k = q_list.T is the matrix containing Krylov basis vectors as columns
-    H = np.zeros((n+1,n+1), dtype=complex)  # The Hessenberg matrix, including a single additional row and column as passing for H[n+1,n]
     
-    # Choosing random first vector b, normalizing it and adding it to q_list
-    b = np.random.rand(chi)
-    q = b/np.linalg.norm(b)
-    q_list = np.vstack((q_list, q))
-
-    #Arnoldi iteration
-    for i in range(n):
-        v = np.matmul(A, q_list[i])
-        for j in range(i+1):
-            H[j,i] = np.matmul( np.conj(q_list[j]), v)
-            v = v - H[j,i] * q_list[j] 
-        H[i+1,i] = np.linalg.norm(v)
-        q = v / H[i+1,i]
-        q_list = np.vstack((q_list,q))
-    
-    # The final form of the H is an n by n Hessenberg matrix, with a padding of zeros in each dimension, and one nonzero number at (n+1,n)
-    H = H[:n,:n]
-    print()
-    print("Hessenberg matrix")
-    print(np.round(np.real(H), decimals=3))
-    
-    eigval, eigvec = np.linalg.eig(H)
-    print()
-    print(eigval)
-    #Find eigenvalues of Hessenberg matrix, these approximate the eigenvalues of A
-
-    
-    #Plug in the dominant eigenvalue into (A-lambda I) v = 0 to find dominant eigenvector v
-    
-    return
-    
-
-
-
 def calculate_thetas_singlesite(state):
     """ contracts lambda_i gamma_i lambda_i+1 (:= theta) for each site and returns them, used for the NORM_state """
     """ NOTE: only works for NORM_state since there the result is the same for all sites! """
@@ -745,8 +624,8 @@ h=0
 JXY=1#1
 JZ=1
 
-s_coup=2
-s_coup = np.sqrt(2*s_coup)  
+s_coup=1
+s_coup = np.sqrt(s_coup)  
 
 
 #### Spin matrices
