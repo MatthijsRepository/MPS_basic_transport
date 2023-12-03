@@ -136,72 +136,63 @@ class MPS:
         self.Gamma_mat[i+1, :, :self.locsize[i+1],:self.locsize[i+2]] = tmp_gamma    
         return
     
-    def apply_foursite(self, TimeOp, i):
+    def apply_foursite(self, TimeOp, i, normalize):
         """ Applies a two-site operator to sites i and i+1 """
         #First the matrices lambda-i to lambda-i+2 are contracted
         theta = np.diag(self.Lambda_mat[i,:]).copy()
+        theta = theta.astype(complex)
         for j in range(4):
-            theta = np.tensordot(theta, self.Gamma_mat[i+j,:,:,:], axes=(-1,1)) #(...,d,chi)
-            theta = np.tensordot(theta, np.diag(self.Lambda_mat[i+j+1]), axes=(-1,1)) #(...,d,chi)
+            theta = np.tensordot(theta, self.Gamma_mat[i+j,:,:,:], axes=(-1,1)) #(chi,...,d,chi)
+            theta = np.tensordot(theta, np.diag(self.Lambda_mat[i+j+1]), axes=(-1,1)) #(chi,...,d,chi)
         #final shape of theta (chi , j times d , chi))
         theta = theta.transpose(0,5,1,2,3,4)
-        theta = theta.reshape((self.chi, self.chi, self.d**4))
-                
-        theta_prime = np.tensordot(theta, TimeOp, axes=(3,1)) #(chi, chi, d**4)
+        theta = theta.reshape((self.chi, self.chi, self.d**4))                
+        theta_prime = np.tensordot(theta, TimeOp, axes=(2,1)) #(chi, chi, d**4)
+        
+        print(self.Gamma_mat[1,:,:2,:4])
+        
         
         for j in range(3):
+            print("AAA")
+            print()
             theta_prime = theta_prime.reshape((self.chi, self.chi, self.d, self.d**(3-j)))
-            theta_prime = theta_prime.transpose(0,2,1,3)
-            theta_prime = theta_prime.reshape((self.chi*self.d, self.chi*self.d**(3-j)))
+            theta_prime = theta_prime.transpose(2,0,3,1) #(d, chi, d**(3-j), chi)
+            theta_prime = theta_prime.reshape((self.d*self.chi, self.d**(3-j)*self.chi))
             X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
-            
+            #This can be done more efficiently by leaving out the Z=Z.T and only doing so in case of j==2
+
             self.Lambda_mat[i+j+1,:] = Y[:self.chi]
+            print(self.Lambda_mat[i+j+1,:])
             
             X = np.reshape(X[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))
-            inv_lambdas  = self.Lambda_mat[i+j, :self.locsize[i+j]].copy()
-            inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
-            tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:,:self.locsize[i+j],:self.locsize[i+j+1]],axes=(1,1)) #(chi, d, chi)
-            self.Gamma_mat[i+j, :, :self.locsize[i+j],:self.locsize[i+j+1]] = np.transpose(tmp_gamma,(1,0,2))
+            print(X[:,:2,:4])
+
+            if j==0:
+                inv_lambdas  = self.Lambda_mat[i+j, :self.locsize[i+j]].copy()
+                inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
+                X = np.tensordot(np.diag(inv_lambdas),X[:,:self.locsize[i+j],:self.locsize[i+j+1]],axes=(1,1)) #(chi, d, chi)
+                X = X.transpose(1,0,2)
             
-        
-        
-        
-        
-        
+            self.Gamma_mat[i+j, :, :self.locsize[i+j],:self.locsize[i+j+1]] = X[:,:self.locsize[i+j],:self.locsize[i+j+1]]
+            #print(self.Gamma_mat[i+j,0,:5,:5])
+            print()
+            #print(self.Gamma_mat[i+j,1,:5,:5])
+
             
-        #theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,1))  #(chi, d, chi)
-        #theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(2,0)) #(chi, d, chi) 
-        #theta = np.tensordot(theta, self.Gamma_mat[i+1,:,:,:],axes=(2,1)) #(chi,d,d,chi)
-        #theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+2,:]), axes=(3,0)) #(chi, d, d, chi)
-        #theta = np.tensordot(theta)
-        #operator is applied, tensor is reshaped
-        theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([1,2],[2,3])) #(chi,chi,d,d)              # Two-site operator        
-        theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d*self.chi, self.d*self.chi)) #first to (d, chi, d, chi), then (d*chi, d*chi)
-        X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
-        
-        if normalize:
-            if self.is_density:
-                self.Lambda_mat[i+1,:] = Y[:self.chi]*1/np.linalg.norm(Y[:self.chi])
-                #self.Lambda_mat[i+1,:] = Y[:self.chi]
-            else:   
-                self.Lambda_mat[i+1,:] = Y[:self.chi]*1/np.linalg.norm(Y[:self.chi])
-        else:
-            self.Lambda_mat[i+1,:] = Y[:self.chi]
-        
-        #truncation, and multiplication with the inverse lambda matrix of site i, where care is taken to avoid divides by 0
-        X = np.reshape(X[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi)) 
-        inv_lambdas  = self.Lambda_mat[i, :self.locsize[i]].copy()
-        inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
-        tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:,:self.locsize[i],:self.locsize[i+1]],axes=(1,1)) #(chi, d, chi)
-        self.Gamma_mat[i, :, :self.locsize[i],:self.locsize[i+1]] = np.transpose(tmp_gamma,(1,0,2))
-        
-        #truncation, and multiplication with the inverse lambda matrix of site i+2, where care is taken to avoid divides by 0
-        Z = np.reshape(Z[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))
-        Z = np.transpose(Z,(0,2,1))
-        inv_lambdas = self.Lambda_mat[i+2, :self.locsize[i+2]].copy()
-        inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
-        tmp_gamma = np.tensordot(Z[:,:self.locsize[i+1],:self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
-        self.Gamma_mat[i+1, :, :self.locsize[i+1],:self.locsize[i+2]] = tmp_gamma    
+            #Z = np.reshape(Z[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))
+            theta_prime = np.reshape(Z[:self.chi*self.d**(3-j),:self.chi], (self.d**(3-j), self.chi, self.chi))
+            if j==2:
+                inv_lambdas  = self.Lambda_mat[i+j+2, :self.locsize[i+j+2]].copy()
+                inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
+                tmp_gamma = np.tensordot(theta_prime[:,:self.locsize[i+j+1],:self.locsize[i+j+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
+                self.Gamma_mat[i+j+1, :, :self.locsize[i+j+1],:self.locsize[i+j+2]] = tmp_gamma 
+            else:
+                theta_prime = theta_prime.transpose(1,2,0)
+                print(np.shape(theta_prime))
+                #Here we must contract Lambda with V for the next SVD. The contraction run over the correct index (the chi resulting from the previous SVD, not the one incorporated with d**(3-j))
+                theta_prime = np.tensordot(np.diag(Y[:chi]), theta_prime, axes=(1,1))
+            print(np.shape(theta_prime))
+            print()
         return 
      
     def TEBD(self, TimeOp, Diss_arr, normalize, Diss_bool):
