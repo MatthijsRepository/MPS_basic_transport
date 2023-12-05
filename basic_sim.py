@@ -308,8 +308,7 @@ class MPS:
             """
                
             self.TEBD(TimeOp, Diss_arr, normalize, Diss_bool)
-
-        
+ 
         #### Plotting expectation values
         
         time_axis = np.arange(steps)*abs(TimeEvol_obj.dt)

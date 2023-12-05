@@ -257,9 +257,7 @@ class MPS:
         theta = theta.reshape((self.chi, self.chi, self.d**4))                
         theta_prime = np.tensordot(theta, TimeOp, axes=(2,1)) #(chi, chi, d**4)
         
-        #print(self.Gamma_mat[1,:,:2,:4])
-        
-        
+        #print(self.Gamma_mat[1,:,:2,:4])        
         for j in range(3):
             #print("AAA")
             #print()
@@ -325,7 +323,6 @@ class MPS:
         theta = self.contract(i+1,i+2)
         theta = theta.transpose(0,1,3,2)
         self.decompose_contraction(theta, i+1)
-        
         return
      
     def TEBD(self, TimeOp, Diss_arr, normalize, Diss_bool):
@@ -873,7 +870,6 @@ def main():
     
     
     
-    print(MPS1.expval(Sz,0) + MPS1.expval(Sz,1))
     #Ham = np.kron(np.kron(Sz, np.eye(d)), np.kron(np.eye(d), Sz)) + np.kron(np.kron(Sx, np.eye(d)), np.kron(np.eye(d), Sx)) + np.kron(np.kron(Sy, np.eye(d)), np.kron(np.eye(d), Sy))
     
     #Ham = np.kron(np.kron(Sz, Sz), np.eye(d**2)) + np.kron(np.kron(Sx, Sx), np.eye(d**2)) + np.kron(np.kron(Sy, Sy), np.eye(d**2))
@@ -890,7 +886,7 @@ def main():
 
     Ham_two = np.kron(Sz,Sz) + np.kron(Sx,Sx) + np.kron(Sy,Sy)
     
-    test_steps = 100
+    test_steps = 400
     test_dt = 0.01
     expvals = np.zeros((N, test_steps+1))
     
@@ -903,6 +899,7 @@ def main():
     for j in range(N):
             #final_Sz[i] = DENS1.expval(np.kron(Sz, np.eye(d)), i)# * DENS1.flipped_factor[i]
             expvals[j,0] = MPS1.expval(Sz, j)
+            #expvals[j,0] = DENS1.expval(np.kron(Sz, np.eye(d)),j)
     
     for i in range(test_steps):
         #MPS1.apply_foursite(OPP,0, False)
@@ -911,9 +908,15 @@ def main():
         
         #MPS1.apply_foursite_swap(OPP_swap,0,False)
         MPS1.apply_foursite_swap(OPP, 0, normalize)
+        #MPS1.apply_foursite_swap(OPP, 2, normalize)
+        
+        #DENS1.apply_foursite_swap(OPP,0,normalize)
+        #DENS1.apply_foursite_swap(OPP,2,normalize)
+        #DENS1.apply_foursite_swap(OPP,4,normalize)
         for j in range(N):
             #final_Sz[i] = DENS1.expval(np.kron(Sz, np.eye(d)), i)# * DENS1.flipped_factor[i]
             expvals[j,i+1] = MPS1.expval(Sz, j)
+            #expvals[j,i+1] = DENS1.expval(np.kron(Sz, np.eye(d)),j)
     
     for j in range(N):
         plt.plot(expvals[j], label=f"{j}")
