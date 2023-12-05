@@ -91,6 +91,39 @@ class MPS:
         theta = np.rollaxis(theta, -1, 1) #(chi, chi, d, ..., d)
         return theta
     
+    def decompose_contraction(self, theta, i):
+        """ decomposes a given theta back into Vidal decomposition. i denotes the leftmost site contracted into theta """
+        num_sites = np.ndim(theta)-2 # The number of sites contained in theta
+        temp = num_sites-1           # Total number of loops required
+        for j in range(temp):
+            theta = theta.reshape((self.chi, self.chi, self.d, self.d**(temp-j)))
+            theta = theta.transpose(2,0,3,1) #(d, chi, d**(temp-j), chi)
+            theta = theta.reshape((self.d*self.chi, self.d**(temp-j)*self.chi))
+            X, Y, Z = np.linalg.svd(theta); Z = Z.T
+            #This can be done more efficiently by leaving out the Z=Z.T and only doing so in case of j==2
+            
+            self.Lambda_mat[i+j+1,:] = Y[:self.chi]
+            
+            X = np.reshape(X[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))
+            inv_lambdas = self.Lambda_mat[i+j, :self.locsize[i+j]].copy()
+            inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
+            X = np.tensordot(np.diag(inv_lambdas),X[:,:self.locsize[i+j],:self.locsize[i+j+1]],axes=(1,1)) #(chi, d, chi)
+            X = X.transpose(1,0,2)
+            self.Gamma_mat[i+j, :, :self.locsize[i+j],:self.locsize[i+j+1]] = X
+
+            theta_prime = np.reshape(Z[:self.chi*self.d**(temp-j),:self.chi], (self.d**(temp-j), self.chi, self.chi))
+            if j==(temp-1):
+                theta_prime = theta_prime.transpose(0,2,1)
+                inv_lambdas  = self.Lambda_mat[i+j+2, :self.locsize[i+j+2]].copy()
+                inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
+                tmp_gamma = np.tensordot(theta_prime[:,:self.locsize[i+j+1],:self.locsize[i+j+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
+                self.Gamma_mat[i+j+1, :, :self.locsize[i+j+1],:self.locsize[i+j+2]] = tmp_gamma 
+            else:
+                theta_prime = theta_prime.transpose(1,2,0)
+                #Here we must contract Lambda with V for the next SVD. The contraction runs over the correct index (the chi resulting from the previous SVD, not the one incorporated with d**(temp-j))
+                theta_prime = np.tensordot(np.diag(Y[:chi]), theta_prime, axes=(1,1))
+        return
+    
     def apply_singlesite(self, TimeOp, i, normalize):
         """ Applies a single-site operator to site i """
         theta = self.contract(i,i)
@@ -593,7 +626,7 @@ newchi=20   #DENS truncation parameter
 
 im_steps = 0
 im_dt = -0.03j
-steps=20
+steps=100
 dt = 0.02
 
 normalize = False
@@ -639,7 +672,7 @@ NORM_state.twosite_thetas = calculate_thetas_twosite(NORM_state)
 loadstate_folder = "data\\"
 loadstate_filename = "1130_2241_DENS1_N20_chi30.pkl"
 
-save_state_bool = True
+save_state_bool = False
 load_state_bool = False
 
 
