@@ -301,91 +301,8 @@ class MPS:
             #print()
         return
     
-    
-    def apply_foursite_swap_test(self, TimeOp, i, normalize):
-        # Swap procedure
-        theta = np.tensordot(np.diag(self.Lambda_mat[i,:]), self.Gamma_mat[i,:,:,:], axes=(1,1))  #(chi, d, chi)
-        theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+1,:]),axes=(2,0)) #(chi, d, chi) 
-        theta = np.tensordot(theta, self.Gamma_mat[i+1,:,:,:],axes=(2,1)) #(chi,d,d,chi)
-        theta = np.tensordot(theta,np.diag(self.Lambda_mat[i+2,:]), axes=(3,0)) #(chi, d, d, chi)
-        
-        theta_prime = np.tensordot(theta.reshape(self.chi, self.d**2, self.chi), TimeOp, axes=(1,1))
-        theta_prime = theta_prime.reshape(self.chi, self.d, self.d, self.chi)
-        
-        theta = theta.transpose(2,0,1,3)
-        
-        print(theta_prime[:4,:,:,:4])
-        #print()
-        print(theta[:4,:,:,:4])
-        
-        theta = theta.reshape(self.d*self.chi, self.d*self.chi)
-        
-        X, Y, Z = np.linalg.svd(theta); Z = Z.T
-        
-        if normalize:
-            if self.is_density:
-                self.Lambda_mat[i+1,:] = Y[:self.chi]*1/np.linalg.norm(Y[:self.chi])
-                #self.Lambda_mat[i+1,:] = Y[:self.chi]
-            else:   
-                self.Lambda_mat[i+1,:] = Y[:self.chi]*1/np.linalg.norm(Y[:self.chi])
-        else:
-            self.Lambda_mat[i+1,:] = Y[:self.chi]
-        
-        #truncation, and multiplication with the inverse lambda matrix of site i, where care is taken to avoid divides by 0
-        X = np.reshape(X[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi)) 
-        inv_lambdas  = self.Lambda_mat[i, :self.locsize[i]].copy()
-        inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
-        tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:,:self.locsize[i],:self.locsize[i+1]],axes=(1,1)) #(chi, d, chi)
-        self.Gamma_mat[i, :, :self.locsize[i],:self.locsize[i+1]] = np.transpose(tmp_gamma,(1,0,2))
-        
-        #truncation, and multiplication with the inverse lambda matrix of site i+2, where care is taken to avoid divides by 0
-        Z = np.reshape(Z[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))
-        Z = np.transpose(Z,(0,2,1))
-        inv_lambdas = self.Lambda_mat[i+2, :self.locsize[i+2]].copy()
-        inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
-        tmp_gamma = np.tensordot(Z[:,:self.locsize[i+1],:self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
-        self.Gamma_mat[i+1, :, :self.locsize[i+1],:self.locsize[i+2]] = tmp_gamma    
-        return 
-        
-        
-    
+  
     def apply_foursite_swap(self, TimeOp, i, normalize):
-        
-        # Apply operators on bonds (1,2) and (3,4)
-        #self.apply_twosite(TimeOp[0],i,normalize)
-        #self.apply_twosite(TimeOp[1],i+2,normalize)
-        
-        # Apply swap (2,3) -> (3,2)
-        #SwapOp = np.array([np.zeros((self.d,self.d)), np.eye(self.d), np.eye(self.d), np.zeros((self.d,self.d))]).reshape((self.d, self.d, self.d, self.d))
-        #SwapOp = np.array([np.zeros((self.d,self.d)), np.eye(self.d), np.eye(self.d), np.zeros((self.d,self.d))])
-        
-        SwapOp = np.zeros((self.d**2, self.d**2))
-        SwapOp[:self.d,self.d:] = np.eye(self.d)
-        SwapOp[self.d:,:self.d] = np.eye(self.d)
-        print(SwapOp)
-        
-        #rint(self.Gamma_mat[2,:,:self.locsize[2],:self.locsize[3]])
-        #self.apply_twosite(SwapOp, i+1, False)  ### Normalize is forced FALSE here!
-        self.apply_foursite_swap_test(SwapOp, i+1, normalize)
-        #print(self.Gamma_mat[2,:,:self.locsize[2],:self.locsize[3]])
-        
-
-        
-        #self.apply_twosite(SwapOp, i+1, False)  ### Normalize is forced FALSE here!
-        #print(self.Gamma_mat[1,:,:self.locsize[1],:self.locsize[2]])
-
-        
-        #Apply operators to bonds (1,3) and (2,4)
-        #self.apply_twosite(TimeOp[2],i,normalize)
-        #self.apply_twosite(TimeOp[3],i+2,normalize)
-        
-        # Apply swap (3,2) -> (2,3)
-        #self.apply_twosite(SwapOp, i+1, False)
-        
-        return
-        
-        
-    def apply_foursite_swap_definite(self, TimeOp, i, normalize):
         # Apply operators on bonds (1,2) and (3,4)
         #self.apply_twosite(TimeOp[0],i,normalize)
         #self.apply_twosite(TimeOp[1],i+2,normalize) 
@@ -985,12 +902,11 @@ def main():
     
     for i in range(test_steps):
         #MPS1.apply_foursite(OPP,0, False)
-        print()
         #MPS1.apply_foursite(OPP,4, False)
         #MPS1.apply_foursite(OPP,2, False)
         
         #MPS1.apply_foursite_swap(OPP_swap,0,False)
-        MPS1.apply_foursite_swap_definite(OPP, 0, normalize)
+        MPS1.apply_foursite_swap(OPP, 0, normalize)
         for j in range(N):
             #final_Sz[i] = DENS1.expval(np.kron(Sz, np.eye(d)), i)# * DENS1.flipped_factor[i]
             expvals[j,i+1] = MPS1.expval(Sz, j)
