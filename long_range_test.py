@@ -212,6 +212,9 @@ class MPS:
         theta_prime = theta_prime.reshape((self.chi, self.chi, self.d, self.d))
         
         #theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([2,3],[2,3])) #(chi,chi,d,d)        
+        
+        self.decompose_contraction(theta_prime, i)
+        """
         theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d*self.chi, self.d*self.chi)) #first to (d, chi, d, chi), then (d*chi, d*chi)
         X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
         
@@ -238,6 +241,7 @@ class MPS:
         inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
         tmp_gamma = np.tensordot(Z[:,:self.locsize[i+1],:self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
         self.Gamma_mat[i+1, :, :self.locsize[i+1],:self.locsize[i+2]] = tmp_gamma    
+        """
         return 
     
     def apply_foursite(self, TimeOp, i, normalize):
