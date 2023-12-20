@@ -36,6 +36,7 @@ class MPS:
         
         self.flipped_factor = np.ones(N)
         self.flipped_factor[:self.N//2*2] *= -1 # all sites start with a flip factor -1, except the last site ONLY in case of odd chain length
+
         return
         
     def __str__(self):
@@ -176,14 +177,26 @@ class MPS:
      
     def TEBD(self, TimeOp, Diss_arr, normalize, Diss_bool):
         """ TEBD algorithm """
+        
+        #"""
         for i in range(0, self.N-1, 2):
             self.apply_twosite(TimeOp, i, normalize)
         for i in range(1, self.N-1, 2):
             self.apply_twosite(TimeOp, i, normalize)
+        #"""
         
         if Diss_bool:
             for i in range(len(Diss_arr["index"])):
                 self.apply_singlesite(Diss_arr["TimeOp"][i], Diss_arr["index"][i], normalize)
+        """
+        for i in range(0, self.N-1, 2):
+            self.apply_twosite(TimeEvol_obj_half.TimeOp, i, normalize)
+        for i in range(1, self.N-1, 2):
+            self.apply_twosite(TimeOp, i, normalize)
+        for i in range(0, self.N-1, 2):
+            self.apply_twosite(TimeEvol_obj_half.TimeOp, i, normalize)
+        #"""
+            
         return
     
     def sign_flip_check(self, Sz_array):
@@ -291,7 +304,7 @@ class MPS:
             
             if track_normalization:
                 Normalization[t] = self.calculate_norm()
-                #if Normalization[t] < 0.99:
+                #if Normalization[t] < 0.995:
                 #    self.force_normalization(Normalization[t])
             if track_energy:
                 energy[t] = self.calculate_energy(TimeEvol_obj)
@@ -306,7 +319,7 @@ class MPS:
                 else:
                     exp_values[i,:,t] *= self.expval_chain(desired_expectations[i][1])
             """
-               
+            
             self.TEBD(TimeOp, Diss_arr, normalize, Diss_bool)
  
         #### Plotting expectation values
@@ -347,6 +360,7 @@ class MPS:
             plt.grid()
             plt.show()
             print(spin_current_values[-1])
+            
 
         
 
@@ -616,16 +630,25 @@ def calculate_thetas_twosite(state):
 
 
 ####################################################################################
+
+#Higher order TEBD
+#Odd/Even number of spins
+#chi
+#dt
+#renormalization
+
+
+
 t0 = time.time()
 #### Simulation variables
-N=10
+N=30
 d=2
 chi=10      #MPS truncation parameter
-newchi=20   #DENS truncation parameter
+newchi=30   #DENS truncation parameter
 
 im_steps = 0
 im_dt = -0.03j
-steps=100
+steps=1200
 dt = 0.02
 
 normalize = False
@@ -669,15 +692,16 @@ NORM_state.twosite_thetas = calculate_thetas_twosite(NORM_state)
 
 #### Loading and saving states
 loadstate_folder = "data\\"
-loadstate_filename = "1130_2241_DENS1_N20_chi30.pkl"
+loadstate_filename = "1219_1632_DENS1_N21_chi30.pkl"
 
-save_state_bool = False
-load_state_bool = False
+save_state_bool = True
+load_state_bool = False 
 
 
 ####################################################################################
+TimeEvol_obj_half = Time_Operator(N, d, JXY, JZ, h, s_coup, dt/2, Diss_bool, True, use_CN) #first and last half timesteps for even sites
 
-    
+
 #temp = np.zeros((d,chi,chi))
 #temp[0,0,0] = np.sqrt(4/5)
 #temp[1,0,0] = 1/np.sqrt(5)
@@ -700,6 +724,7 @@ def main():
     
     #creating time evolution object
     TimeEvol_obj1 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, Diss_bool, True, use_CN)
+    
     #TimeEvol_obj2 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, False, False, use_CN)
     
     #declaring which desired operator expectations must be tracked
@@ -712,9 +737,16 @@ def main():
     pure_desired_expectations.append(("Sz", Sz, False, 0))
     
     #time evolution of the state
-    DENS1.time_evolution(TimeEvol_obj1, normalize, steps, desired_expectations, True, True, True)
-    #MPS1.time_evolution(TimeEvol_obj2, normalize, steps, desired_expectations, False, True, False)
+    """
+    for i in range(1, DENS1.N-1, 2):
+        DENS1.apply_twosite(TimeEvol_obj_half.TimeOp, i, normalize)
+    for i in range(0, DENS1.N-1, 2):
+        DENS1.apply_twosite(TimeEvol_obj_half.TimeOp, i, normalize)
+    #"""
         
+    DENS1.time_evolution(TimeEvol_obj1, normalize, steps, desired_expectations, True, True, True)
+   
+    
 
     #a=DENS1.Gamma_mat[1,0,:4,:16].copy()
     #DENS1.time_evolution(TimeEvol_obj1, normalize, 1, desired_expectations, True, False, False)
@@ -726,8 +758,7 @@ def main():
     #print()
     #print(b)
     
-    
-    
+
     if save_state_bool:
         DENS1.store()
 
