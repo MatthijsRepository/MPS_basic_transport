@@ -36,7 +36,9 @@ class MPS:
         
         self.flipped_factor = np.ones(N)
         self.flipped_factor[:self.N//2*2] *= -1 # all sites start with a flip factor -1, except the last site ONLY in case of odd chain length
-
+        
+        self.spin_current_values = np.array([])
+        self.normalization = np.array([])
         return
         
     def __str__(self):
@@ -280,9 +282,9 @@ class MPS:
             Normalization = np.zeros(steps)
         if track_energy:
             energy = np.zeros(steps)
-        if (track_current==True and Diss_bool==True):
-            if steps>current_cutoff:
-                spin_current_values = np.zeros(steps-current_cutoff)
+        #if (track_current==True and Diss_bool==True):
+        #    if steps>current_cutoff:
+        #        spin_current_values = np.zeros(steps-current_cutoff)
         
         exp_values = np.ones((len(desired_expectations), self.N, steps)) #array to store expectation values in
                     
@@ -304,14 +306,18 @@ class MPS:
             
             if track_normalization:
                 Normalization[t] = self.calculate_norm()
+                self.normalization = np.append(self.normalization, Normalization[t])
                 #if Normalization[t] < 0.995:
                 #    self.force_normalization(Normalization[t])
             if track_energy:
                 energy[t] = self.calculate_energy(TimeEvol_obj)
             if (track_current==True and Diss_bool==True):
-                if t>=current_cutoff:
-                    middle_site = int(np.round(self.N/2-1))
-                    spin_current_values[t-current_cutoff] = self.flipped_factor[middle_site] * self.flipped_factor[middle_site+1] * np.real( self.expval_twosite(spin_current_op, middle_site) )
+                #if t>=current_cutoff:
+                #    middle_site = int(np.round(self.N/2-1))
+                #    spin_current_values[t-current_cutoff] = self.flipped_factor[middle_site] * self.flipped_factor[middle_site+1] * np.real( self.expval_twosite(spin_current_op, middle_site) )
+                middle_site = int(np.round(self.N/2-1))
+                self.spin_current_values = np.append(self.spin_current_values, self.flipped_factor[middle_site] * self.flipped_factor[middle_site+1] * np.real( self.expval_twosite(spin_current_op, middle_site) ))
+                
             """              
             for i in range(len(desired_expectations)):
                 if desired_expectations[i][2] == True:
@@ -352,14 +358,14 @@ class MPS:
         
         if (track_current==True and Diss_bool==True):
             print("Time averaged spin current through middle site:")
-            print((np.average(spin_current_values)))
-            plt.plot(spin_current_values)
+            #print((np.average(self.spin_current_values)))
+            plt.plot(self.spin_current_values)
             plt.title(f"Current of {self.name} over time")
             plt.xlabel("Last x timesteps")
             plt.ylabel("Current")
             plt.grid()
             plt.show()
-            print(spin_current_values[-1])
+            #print(self.spin_current_values[-1])
             
 
         
@@ -641,14 +647,14 @@ def calculate_thetas_twosite(state):
 
 t0 = time.time()
 #### Simulation variables
-N=30
+N=21
 d=2
 chi=10      #MPS truncation parameter
-newchi=30   #DENS truncation parameter
+newchi=35   #DENS truncation parameter
 
 im_steps = 0
 im_dt = -0.03j
-steps=1200
+steps=8000
 dt = 0.02
 
 normalize = False
@@ -692,11 +698,10 @@ NORM_state.twosite_thetas = calculate_thetas_twosite(NORM_state)
 
 #### Loading and saving states
 loadstate_folder = "data\\"
-loadstate_filename = "1219_1632_DENS1_N21_chi30.pkl"
+loadstate_filename = "0102_2106_DENS1_N21_chi35.pkl"
 
 save_state_bool = True
-load_state_bool = False 
-
+load_state_bool = True
 
 ####################################################################################
 TimeEvol_obj_half = Time_Operator(N, d, JXY, JZ, h, s_coup, dt/2, Diss_bool, True, use_CN) #first and last half timesteps for even sites
@@ -721,6 +726,8 @@ def main():
         #MPS1.set_Gamma_singlesite(0, temp)
         
         DENS1 = create_superket(MPS1, newchi)
+    
+    #print(DENS1.calculate_norm())
     
     #creating time evolution object
     TimeEvol_obj1 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, Diss_bool, True, use_CN)

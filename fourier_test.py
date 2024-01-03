@@ -28,13 +28,23 @@ def load_state(folder, name, new_ID):
 
 loadstate_folder = "data\\"
 #loadstate_filename = "1220_1546_DENS1_N20_chi25.pkl"
-loadstate_filename = "1221_1441_DENS1_N21_chi25.pkl"  #NORM: 0.9392
+#loadstate_filename = "1221_1441_DENS1_N21_chi25.pkl"  #NORM: 0.9392
+
+loadstate_filename = "0103_0926_DENS1_N21_chi35.pkl"
+
 DENS1 = load_state(loadstate_folder, loadstate_filename, 1)
 
 
 
-#DENS1.spin_current_values[-7200:] *= -1
+#DENS1.spin_current_values[4999] *= -1
 #DENS1.store()
+
+
+#"""
+plt.plot(DENS1.normalization)
+plt.title("Normalization")
+plt.grid()
+plt.show()
 
 plt.plot(DENS1.spin_current_values)
 plt.grid()
@@ -45,13 +55,13 @@ print(len(DENS1.spin_current_values))
 print(np.pi**2 / DENS1.N**2)
 #DENS1.spin_current_values /= 0.944459559
 
-plt.plot(DENS1.spin_current_values[-23000:])
+plt.plot(DENS1.spin_current_values[-28000:])
 plt.grid()
 plt.show()
 
 
 
-filter_start = -30000
+filter_start = -28000
 x_data = np.arange(0, -80-filter_start)
 
 
@@ -65,7 +75,7 @@ plt.plot(wow[:1000])
 plt.show()
 
 
-low_lim = 300
+low_lim = 250
 up_lim=1000
 #wow[58] = (wow[59]+wow[57])/2
 #wow[61] = (wow[62]+wow[60])/2
@@ -89,7 +99,7 @@ plt.plot(b, color="red")
 plt.grid()
 plt.show()
 
-
+#"""
 
 """
 def functional(x, a, b, c, d):

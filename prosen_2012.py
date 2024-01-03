@@ -551,6 +551,7 @@ class Time_Operator:
         Sz_arr = np.array([np.kron(Sz, np.eye(self.d)) , np.kron(np.eye(self.d), Sz)])
         Identity = np.eye(self.d**2)
          
+        """ Calculates (H otimes I) - (I otimes H)* """
         H_arr = np.ones((2, self.d**4, self.d**4), dtype=complex)
         for i in range(2):
             #SX = np.kron(np.kron(Sx_arr[i], Identity), Sx_arr[i])
@@ -741,10 +742,10 @@ def calculate_thetas_threesite(state):
 ####################################################################################
 t0 = time.time()
 #### Simulation variables
-N=4
+N=12
 d=2
 chi=20      #MPS truncation parameter
-newchi=20   #DENS truncation parameter
+newchi=25   #DENS truncation parameter
 
 im_steps = 0
 im_dt = -0.03j
