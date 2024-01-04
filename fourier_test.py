@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 
 
+print(np.pi**2/21**2)
+
 
 def load_state(folder, name, new_ID):
     """ loads a pickled state from folder 'folder' with name 'name' - note: name must include .pkl """
@@ -45,6 +47,7 @@ plt.plot(DENS1.normalization)
 plt.title("Normalization")
 plt.grid()
 plt.show()
+#"""
 
 plt.plot(DENS1.spin_current_values)
 plt.grid()
@@ -101,26 +104,30 @@ plt.show()
 
 #"""
 
-"""
-def functional(x, a, b, c, d):
-    return b*np.exp(a*x) - c*(d*x+1)**1/2
+#"""
+def functional(x, a, b, c):
+    return b*np.exp(a*x) + c #- c*(d*x+1)**1/2
 
 print()
 print("here")
 print()
-fit_params = curve_fit(functional, x_data, b[40:-40], p0=np.array([-0.00003574, 0.0125, 0.0125,1000]))
-
-pa, pb, pc, pd = fit_params[0][0], fit_params[0][1], fit_params[0][2], fit_params[0][3]
-
-print(pa, pb, pc, pd)
+#fit_params = curve_fit(functional, x_data, b[40:-40], p0=np.array([-0.00003574, 0.0125, 0.0125,1000]))
+fit_params = curve_fit(functional, x_data, b[40:-40], p0=np.array([-0.0001, 0.01, 0.0125]))
 
 
-fit = functional(x_data, pa, pb, pc, pd)
+#pa, pb, pc, pd = fit_params[0][0], fit_params[0][1], fit_params[0][2], fit_params[0][3]
+pa, pb, pc = fit_params[0][0], fit_params[0][1], fit_params[0][2]
+
+
+print(pa, pb, pc)
+
+x_data_new = np.arange(40000)
+fit = functional(x_data_new, pa, pb, pc)
 
 plt.plot(b[40:-40])
 plt.plot(fit)
 plt.grid()
 plt.show()
-"""
+#"""
 
 
