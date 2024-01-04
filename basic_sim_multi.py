@@ -1,6 +1,8 @@
 import os
 os.chdir("C:\\Users\\matth\\OneDrive\\Documents\\TUDelft\\MEP\\code\\MPS_basic_transport")
 
+print(os.getcwd())
+
 from multiprocessing import Pool
 
 import numpy as np
@@ -411,34 +413,68 @@ class MPS:
             self.Gamma_mat *= site_rescale_factor
         return
  
+
+
+def global_apply_twosite(TimeOp, normalize, Lambda_mat, Gamma_mat, locsize, d, chi):
+        """ Applies a two-site operator to sites i and i+1 """
+        #theta = self.contract(i,i+1) #(chi, chi, d, d)
+        theta = np.tensordot(np.diag(Lambda_mat[0,:]), Gamma_mat[0,:,:,:], axes=(1,1)) #(chi, d, chi)
+        theta = np.tensordot(theta,np.diag(Lambda_mat[1,:]),axes=(2,0)) #(chi, d, chi) 
+        theta = np.tensordot(theta, Gamma_mat[1,:,:,:],axes=(2,1)) #(chi,d,d,chi)
+        theta = np.tensordot(theta,np.diag(Lambda_mat[2,:]), axes=(3,0)) #(chi, d, d, chi)        
+        #operator is applied, tensor is reshaped
+        theta_prime = np.tensordot(theta,TimeOp[:,:,:,:],axes=([1,2],[2,3])) #(chi,chi,d,d)        
+        theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(d*chi, d*chi)) #first to (d, chi, d, chi), then (d*chi, d*chi)
+        X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
+        """
+        if normalize:
+            if is_density:
+                Lambda_mat[i+1,:] = Y[:chi]*1/np.linalg.norm(Y[:chi])
+                #Lambda_mat[i+1,:] = Y[:chi]
+            else:   
+                Lambda_mat[i+1,:] = Y[:chi]*1/np.linalg.norm(Y[:chi])
+        else:
+            Lambda_mat[i+1,:] = Y[:chi]
+        """
+        new_Lambda_mat = Y[:chi]
+        
+        #truncation, and multiplication with the inverse lambda matrix of site i, where care is taken to avoid divides by 0
+        X = np.reshape(X[:d*chi, :chi], (d, chi, chi)) 
+        inv_lambdas  = Lambda_mat[0, :locsize[0]].copy()
+        inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
+        tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:,:locsize[0],:locsize[1]],axes=(1,1)) #(chi, d, chi)
+        #Gamma_mat[i, :, :locsize[i],:locsize[i+1]] = np.transpose(tmp_gamma,(1,0,2))
+        new_Gamma_mat_0 = np.transpose(tmp_gamma,(1,0,2))
+        
+        #truncation, and multiplication with the inverse lambda matrix of site i+2, where care is taken to avoid divides by 0
+        Z = np.reshape(Z[:d*chi, :chi], (d, chi, chi))
+        Z = np.transpose(Z,(0,2,1))
+        inv_lambdas = Lambda_mat[2, :locsize[2]].copy()
+        inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
+        #tmp_gamma = np.tensordot(Z[:,:locsize[i+1],:locsize[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
+        #Gamma_mat[i+1, :, :locsize[i+1],:locsize[i+2]] = tmp_gamma    
+        new_Gamma_mat_1 = np.tensordot(Z[:,:locsize[1],:locsize[2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
+        return (new_Lambda_mat, new_Gamma_mat_0, new_Gamma_mat_1)
         
 def TEBD_multi(State, TimeOp, Diss_arr, normalize, Diss_bool):
-    #Even sites
-    with Pool(processes=max_cores) as p:
-            # Map the function to the indices of the array
-            #A_new = p.starmap(global_two_site_operator, [(State.A[i],) for i in range(State.N)])
-            new_matrices = p.starmap(State.apply_twosite, [(TimeOp, i, normalize) for i in range(0, State.N-1, 2)])
-
-    for i in range(0, State.N-1, 2):
-        State.Lambda_mat[i+1] = new_matrices[int(i//2)][0]
-        State.Gamma_mat[i, :, :State.locsize[i],:State.locsize[i+1]] = new_matrices[int(i//2)][1]
-        State.Gamma_mat[i+1, :, :State.locsize[i+1],:State.locsize[i+2]] = new_matrices[int(i//2)][2]  
-        
-    #Odd sites
-    with Pool(processes=max_cores) as p:
-            # Map the function to the indices of the array
-            #A_new = p.starmap(global_two_site_operator, [(State.A[i],) for i in range(State.N)])
-            new_matrices = p.starmap(State.apply_twosite, [(TimeOp, i, normalize) for i in range(1, State.N-1, 2)])
-
-    for i in range(1, State.N-1, 2):
-        State.Lambda_mat[i+1] = new_matrices[int(i//2)][0]
-        State.Gamma_mat[i, :, :State.locsize[i],:State.locsize[i+1]] = new_matrices[int(i//2)][1]
-        State.Gamma_mat[i+1, :, :State.locsize[i+1],:State.locsize[i+2]] = new_matrices[int(i//2)][2] 
     
+    for j in [0,1]:
+        #with Pool(processes=max_cores) as p:
+            # Map the function to the indices of the array
+            #A_new = p.starmap(global_two_site_operator, [(State.A[i],) for i in range(State.N)])
+            #new_matrices = p.starmap(State.apply_twosite, [(TimeOp, i, normalize) for i in range(j, State.N-1, 2)])
+        new_matrices = p.starmap(global_apply_twosite, [(TimeOp[i], normalize, State.Lambda_mat[i:i+3], State.Gamma_mat[i:i+2], State.locsize[i:i+3], State.d, State.chi) for i in range(j, State.N-1, 2)])
+
+        for i in range(j, State.N-1, 2):
+            State.Lambda_mat[i+1] = new_matrices[int(i//2)][0]
+            State.Gamma_mat[i, :, :State.locsize[i],:State.locsize[i+1]] = new_matrices[int(i//2)][1]
+            State.Gamma_mat[i+1, :, :State.locsize[i+1],:State.locsize[i+2]] = new_matrices[int(i//2)][2]  
+        
     if Diss_bool:
             for i in range(len(Diss_arr["index"])):
                 State.apply_singlesite(Diss_arr["TimeOp"][i], Diss_arr["index"][i], normalize)
     pass 
+
 
 """
 def TEBD_multi(State, TimeOp, Diss_arr, normalize, Diss_bool):
@@ -701,23 +737,23 @@ def calculate_thetas_twosite(state):
 #renormalization
 
 
-max_cores = 3
+max_cores = 5
 
 t0 = time.time()
 #### Simulation variables
-N=12
+N=21
 d=2
 chi=10      #MPS truncation parameter
-newchi=25   #DENS truncation parameter
+newchi=35   #DENS truncation parameter
 
 im_steps = 0
 im_dt = -0.03j
-steps=100
+steps=1000
 dt = 0.02
 
 normalize = False
 use_CN = False #choose if you want to use Crank-Nicolson approximation
-Diss_bool = False
+Diss_bool = True
 renormalization_type = 0        # 0 for lambdas, 1 for gammas
 
 flip_threshold = 0.01 #Threshold below which an <Sz> sign flip is not flagged as being caused by the SVD
@@ -876,6 +912,7 @@ def main_function():
 
 
 if __name__=="__main__":
+    p = Pool(processes=max_cores)
     main_function()
 
 elapsed_time = time.time()-t0
