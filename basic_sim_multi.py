@@ -1,6 +1,8 @@
 import os
 os.chdir("C:\\Users\\matth\\OneDrive\\Documents\\TUDelft\\MEP\\code\\MPS_basic_transport")
 
+from multiprocessing import Pool
+
 import numpy as np
 from scipy.linalg import expm
 from scipy.sparse.linalg import eigs
@@ -151,7 +153,7 @@ class MPS:
         theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([2,3],[2,3])) #(chi,chi,d,d)        
         theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d*self.chi, self.d*self.chi)) #first to (d, chi, d, chi), then (d*chi, d*chi)
         X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
-        
+        """
         if normalize:
             if self.is_density:
                 self.Lambda_mat[i+1,:] = Y[:self.chi]*1/np.linalg.norm(Y[:self.chi])
@@ -160,22 +162,26 @@ class MPS:
                 self.Lambda_mat[i+1,:] = Y[:self.chi]*1/np.linalg.norm(Y[:self.chi])
         else:
             self.Lambda_mat[i+1,:] = Y[:self.chi]
+        """
+        new_Lambda_mat = Y[:self.chi]
         
         #truncation, and multiplication with the inverse lambda matrix of site i, where care is taken to avoid divides by 0
         X = np.reshape(X[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi)) 
         inv_lambdas  = self.Lambda_mat[i, :self.locsize[i]].copy()
         inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
         tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:,:self.locsize[i],:self.locsize[i+1]],axes=(1,1)) #(chi, d, chi)
-        self.Gamma_mat[i, :, :self.locsize[i],:self.locsize[i+1]] = np.transpose(tmp_gamma,(1,0,2))
+        #self.Gamma_mat[i, :, :self.locsize[i],:self.locsize[i+1]] = np.transpose(tmp_gamma,(1,0,2))
+        new_Gamma_mat_0 = np.transpose(tmp_gamma,(1,0,2))
         
         #truncation, and multiplication with the inverse lambda matrix of site i+2, where care is taken to avoid divides by 0
         Z = np.reshape(Z[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))
         Z = np.transpose(Z,(0,2,1))
         inv_lambdas = self.Lambda_mat[i+2, :self.locsize[i+2]].copy()
         inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
-        tmp_gamma = np.tensordot(Z[:,:self.locsize[i+1],:self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
-        self.Gamma_mat[i+1, :, :self.locsize[i+1],:self.locsize[i+2]] = tmp_gamma    
-        return 
+        #tmp_gamma = np.tensordot(Z[:,:self.locsize[i+1],:self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
+        #self.Gamma_mat[i+1, :, :self.locsize[i+1],:self.locsize[i+2]] = tmp_gamma    
+        new_Gamma_mat_1 = np.tensordot(Z[:,:self.locsize[i+1],:self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
+        return (new_Lambda_mat, new_Gamma_mat_0, new_Gamma_mat_1)
      
     def TEBD(self, TimeOp, Diss_arr, normalize, Diss_bool):
         """ TEBD algorithm """
@@ -326,7 +332,8 @@ class MPS:
                     exp_values[i,:,t] *= self.expval_chain(desired_expectations[i][1])
             """
             
-            self.TEBD(TimeOp, Diss_arr, normalize, Diss_bool)
+            #self.TEBD(TimeOp, Diss_arr, normalize, Diss_bool)
+            TEBD_multi(self, TimeOp, Diss_arr, normalize, Diss_bool)
  
         #### Plotting expectation values
         
@@ -403,8 +410,58 @@ class MPS:
             site_rescale_factor = (1/normalization)**(1/self.N)
             self.Gamma_mat *= site_rescale_factor
         return
-       
+ 
+        
+def TEBD_multi(State, TimeOp, Diss_arr, normalize, Diss_bool):
+    #Even sites
+    with Pool(processes=max_cores) as p:
+            # Map the function to the indices of the array
+            #A_new = p.starmap(global_two_site_operator, [(State.A[i],) for i in range(State.N)])
+            new_matrices = p.starmap(State.apply_twosite, [(TimeOp, i, normalize) for i in range(0, State.N-1, 2)])
 
+    for i in range(0, State.N-1, 2):
+        State.Lambda_mat[i+1] = new_matrices[int(i//2)][0]
+        State.Gamma_mat[i, :, :State.locsize[i],:State.locsize[i+1]] = new_matrices[int(i//2)][1]
+        State.Gamma_mat[i+1, :, :State.locsize[i+1],:State.locsize[i+2]] = new_matrices[int(i//2)][2]  
+        
+    #Odd sites
+    with Pool(processes=max_cores) as p:
+            # Map the function to the indices of the array
+            #A_new = p.starmap(global_two_site_operator, [(State.A[i],) for i in range(State.N)])
+            new_matrices = p.starmap(State.apply_twosite, [(TimeOp, i, normalize) for i in range(1, State.N-1, 2)])
+
+    for i in range(1, State.N-1, 2):
+        State.Lambda_mat[i+1] = new_matrices[int(i//2)][0]
+        State.Gamma_mat[i, :, :State.locsize[i],:State.locsize[i+1]] = new_matrices[int(i//2)][1]
+        State.Gamma_mat[i+1, :, :State.locsize[i+1],:State.locsize[i+2]] = new_matrices[int(i//2)][2] 
+    
+    if Diss_bool:
+            for i in range(len(Diss_arr["index"])):
+                State.apply_singlesite(Diss_arr["TimeOp"][i], Diss_arr["index"][i], normalize)
+    pass 
+
+"""
+def TEBD_multi(State, TimeOp, Diss_arr, normalize, Diss_bool):
+    #Even sites
+    for i in range(0, State.N-1, 2):
+        new_matrices = State.apply_twosite(TimeOp, i, normalize)
+        State.Lambda_mat[i+1] = new_matrices[0]#[i][0]
+        State.Gamma_mat[i, :, :State.locsize[i],:State.locsize[i+1]] = new_matrices[1]#[i][1]
+        State.Gamma_mat[i+1, :, :State.locsize[i+1],:State.locsize[i+2]] = new_matrices[2]#[i][2] 
+        
+    #Odd sites
+    for i in range(1, State.N-1, 2):
+        new_matrices = State.apply_twosite(TimeOp, i, normalize)
+        State.Lambda_mat[i+1] = new_matrices[0]#[i][0]
+        State.Gamma_mat[i, :, :State.locsize[i],:State.locsize[i+1]] = new_matrices[1]#[i][1]
+        State.Gamma_mat[i+1, :, :State.locsize[i+1],:State.locsize[i+2]] = new_matrices[2]#[i][2] 
+    
+    if Diss_bool:
+            for i in range(len(Diss_arr["index"])):
+                State.apply_singlesite(Diss_arr["TimeOp"][i], Diss_arr["index"][i], normalize)
+    pass
+
+#"""
 ########################################################################################  
 
 class Time_Operator:
@@ -644,6 +701,7 @@ def calculate_thetas_twosite(state):
 #renormalization
 
 
+max_cores = 3
 
 t0 = time.time()
 #### Simulation variables
@@ -654,12 +712,12 @@ newchi=25   #DENS truncation parameter
 
 im_steps = 0
 im_dt = -0.03j
-steps=200
+steps=100
 dt = 0.02
 
 normalize = False
 use_CN = False #choose if you want to use Crank-Nicolson approximation
-Diss_bool = True
+Diss_bool = False
 renormalization_type = 0        # 0 for lambdas, 1 for gammas
 
 flip_threshold = 0.01 #Threshold below which an <Sz> sign flip is not flagged as being caused by the SVD
@@ -712,7 +770,7 @@ TimeEvol_obj_half = Time_Operator(N, d, JXY, JZ, h, s_coup, dt/2, Diss_bool, Tru
 #temp[1,0,0] = 1/np.sqrt(5)
 #MPS1.set_Gamma_singlesite(0, temp)
 
-def main():
+def main_function():
     #load state or create a new one
     if load_state_bool:
         DENS1 = load_state(loadstate_folder, loadstate_filename, 1)
@@ -753,7 +811,8 @@ def main():
         
     DENS1.time_evolution(TimeEvol_obj1, normalize, steps, desired_expectations, True, True, True)
    
-    
+    #print(DENS1.Lambda_mat[1,:4])
+    #print(DENS1.Gamma_mat[0,0,:4,:4])    
 
     #a=DENS1.Gamma_mat[1,0,:4,:16].copy()
     #DENS1.time_evolution(TimeEvol_obj1, normalize, 1, desired_expectations, True, False, False)
@@ -815,7 +874,9 @@ def main():
 
     pass
 
-main()
+
+if __name__=="__main__":
+    main_function()
 
 elapsed_time = time.time()-t0
 print(f"Elapsed simulation time: {elapsed_time}")
