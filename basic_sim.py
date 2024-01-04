@@ -647,19 +647,19 @@ def calculate_thetas_twosite(state):
 
 t0 = time.time()
 #### Simulation variables
-N=21
+N=12
 d=2
 chi=10      #MPS truncation parameter
-newchi=35   #DENS truncation parameter
+newchi=25   #DENS truncation parameter
 
 im_steps = 0
 im_dt = -0.03j
-steps=8000
+steps=100
 dt = 0.02
 
 normalize = False
 use_CN = False #choose if you want to use Crank-Nicolson approximation
-Diss_bool = True
+Diss_bool = False
 renormalization_type = 0        # 0 for lambdas, 1 for gammas
 
 flip_threshold = 0.01 #Threshold below which an <Sz> sign flip is not flagged as being caused by the SVD
@@ -685,7 +685,7 @@ Sz = np.array([[1,0],[0,-1]])
 #### Spin current operator and cutoff factor
 cutoff_factor = 0
 current_cutoff=round(steps * cutoff_factor) 
-spin_current_op = np.kron( np.kron(Sx, np.eye(d)) , np.kron(Sy, np.eye(d))) - np.kron( np.kron(Sy, np.eye(d)) , np.kron(Sx, np.eye(d)))
+spin_current_op = 2 * np.kron( np.kron(Sx, np.eye(d)) , np.kron(Sy, np.eye(d))) - np.kron( np.kron(Sy, np.eye(d)) , np.kron(Sx, np.eye(d)))
 #equivalent operator in terms of Sp and Sm
 #spin_current_op = 2*1j* ( np.kron( np.kron(Sp, np.eye(d)) , np.kron(Sm, np.eye(d))) - np.kron( np.kron(Sm, np.eye(d)) , np.kron(Sp, np.eye(d))) )
 
@@ -700,8 +700,8 @@ NORM_state.twosite_thetas = calculate_thetas_twosite(NORM_state)
 loadstate_folder = "data\\"
 loadstate_filename = "0102_2106_DENS1_N21_chi35.pkl"
 
-save_state_bool = True
-load_state_bool = True
+save_state_bool = False
+load_state_bool = False
 
 ####################################################################################
 TimeEvol_obj_half = Time_Operator(N, d, JXY, JZ, h, s_coup, dt/2, Diss_bool, True, use_CN) #first and last half timesteps for even sites
