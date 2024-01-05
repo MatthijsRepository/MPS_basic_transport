@@ -647,10 +647,10 @@ def calculate_thetas_twosite(state):
 
 t0 = time.time()
 #### Simulation variables
-N=12
+N=21
 d=2
 chi=10      #MPS truncation parameter
-newchi=25   #DENS truncation parameter
+newchi=35   #DENS truncation parameter
 
 im_steps = 0
 im_dt = -0.03j
@@ -659,7 +659,7 @@ dt = 0.02
 
 normalize = False
 use_CN = False #choose if you want to use Crank-Nicolson approximation
-Diss_bool = False
+Diss_bool = True
 renormalization_type = 0        # 0 for lambdas, 1 for gammas
 
 flip_threshold = 0.01 #Threshold below which an <Sz> sign flip is not flagged as being caused by the SVD
@@ -685,7 +685,7 @@ Sz = np.array([[1,0],[0,-1]])
 #### Spin current operator and cutoff factor
 cutoff_factor = 0
 current_cutoff=round(steps * cutoff_factor) 
-spin_current_op = 2 * np.kron( np.kron(Sx, np.eye(d)) , np.kron(Sy, np.eye(d))) - np.kron( np.kron(Sy, np.eye(d)) , np.kron(Sx, np.eye(d)))
+spin_current_op = 2 * ( np.kron( np.kron(Sx, np.eye(d)) , np.kron(Sy, np.eye(d))) - np.kron( np.kron(Sy, np.eye(d)) , np.kron(Sx, np.eye(d))) )
 #equivalent operator in terms of Sp and Sm
 #spin_current_op = 2*1j* ( np.kron( np.kron(Sp, np.eye(d)) , np.kron(Sm, np.eye(d))) - np.kron( np.kron(Sm, np.eye(d)) , np.kron(Sp, np.eye(d))) )
 
