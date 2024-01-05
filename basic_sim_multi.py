@@ -16,7 +16,9 @@ import pickle
 import time
 from datetime import datetime
 
-from MPS_initializations import initialize_halfstate, initialize_LU_RD
+
+#This import has been moved to the main() function, to avoid errors with multiprocessing
+#from MPS_initializations import initialize_halfstate, initialize_LU_RD
 
 
 ########################################################################################################
@@ -462,7 +464,7 @@ def TEBD_multi(State, TimeOp, Diss_arr, normalize, Diss_bool):
         #with Pool(processes=max_cores) as p:
             # Map the function to the indices of the array
             #A_new = p.starmap(global_two_site_operator, [(State.A[i],) for i in range(State.N)])
-            #new_matrices = p.starmap(State.apply_twosite, [(TimeOp, i, normalize) for i in range(j, State.N-1, 2)])
+        #new_matrices = p.starmap(State.apply_twosite, [(TimeOp, i, normalize) for i in range(j, State.N-1, 2)])
         new_matrices = p.starmap(global_apply_twosite, [(TimeOp[i], normalize, State.Lambda_mat[i:i+3], State.Gamma_mat[i:i+2], State.locsize[i:i+3], State.d, State.chi) for i in range(j, State.N-1, 2)])
 
         for i in range(j, State.N-1, 2):
@@ -748,7 +750,7 @@ newchi=35   #DENS truncation parameter
 
 im_steps = 0
 im_dt = -0.03j
-steps=1000
+steps=4000
 dt = 0.02
 
 normalize = False
@@ -779,7 +781,7 @@ Sz = np.array([[1,0],[0,-1]])
 #### Spin current operator and cutoff factor
 cutoff_factor = 0
 current_cutoff=round(steps * cutoff_factor) 
-spin_current_op = 2 * np.kron( np.kron(Sx, np.eye(d)) , np.kron(Sy, np.eye(d))) - np.kron( np.kron(Sy, np.eye(d)) , np.kron(Sx, np.eye(d)))
+spin_current_op = 2 * ( np.kron( np.kron(Sx, np.eye(d)) , np.kron(Sy, np.eye(d))) - np.kron( np.kron(Sy, np.eye(d)) , np.kron(Sx, np.eye(d))) )
 #equivalent operator in terms of Sp and Sm
 #spin_current_op = 2*1j* ( np.kron( np.kron(Sp, np.eye(d)) , np.kron(Sm, np.eye(d))) - np.kron( np.kron(Sm, np.eye(d)) , np.kron(Sp, np.eye(d))) )
 
@@ -792,13 +794,13 @@ NORM_state.twosite_thetas = calculate_thetas_twosite(NORM_state)
 
 #### Loading and saving states
 loadstate_folder = "data\\"
-loadstate_filename = "0102_2106_DENS1_N21_chi35.pkl"
+loadstate_filename = "0105_1241_DENS1_N21_chi35.pkl"
 
-save_state_bool = False
-load_state_bool = False
+save_state_bool = True
+load_state_bool = True
 
 ####################################################################################
-TimeEvol_obj_half = Time_Operator(N, d, JXY, JZ, h, s_coup, dt/2, Diss_bool, True, use_CN) #first and last half timesteps for even sites
+#TimeEvol_obj_half = Time_Operator(N, d, JXY, JZ, h, s_coup, dt/2, Diss_bool, True, use_CN) #first and last half timesteps for even sites
 
 
 #temp = np.zeros((d,chi,chi))
@@ -806,7 +808,10 @@ TimeEvol_obj_half = Time_Operator(N, d, JXY, JZ, h, s_coup, dt/2, Diss_bool, Tru
 #temp[1,0,0] = 1/np.sqrt(5)
 #MPS1.set_Gamma_singlesite(0, temp)
 
-def main_function():
+def main():
+    #Import is done here instead of at the beginning of the code to avoid multiprocessing-related errors
+    from MPS_initializations import initialize_halfstate, initialize_LU_RD
+    
     #load state or create a new one
     if load_state_bool:
         DENS1 = load_state(loadstate_folder, loadstate_filename, 1)
@@ -913,7 +918,7 @@ def main_function():
 
 if __name__=="__main__":
     p = Pool(processes=max_cores)
-    main_function()
+    main()
 
 elapsed_time = time.time()-t0
 print(f"Elapsed simulation time: {elapsed_time}")
