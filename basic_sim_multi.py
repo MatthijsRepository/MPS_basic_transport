@@ -302,6 +302,8 @@ class MPS:
         
         print(f"Starting time evolution of {self.name}")
         for t in range(steps):
+            if (t%2001==0):
+                self.store()
             if (t%20==0):
                 print(t)
             
@@ -743,14 +745,14 @@ max_cores = 5
 
 t0 = time.time()
 #### Simulation variables
-N=21
+N=29
 d=2
 chi=10      #MPS truncation parameter
 newchi=35   #DENS truncation parameter
 
 im_steps = 0
 im_dt = -0.03j
-steps=4000
+steps=2000
 dt = 0.02
 
 normalize = False
@@ -794,7 +796,7 @@ NORM_state.twosite_thetas = calculate_thetas_twosite(NORM_state)
 
 #### Loading and saving states
 loadstate_folder = "data\\"
-loadstate_filename = "0105_1241_DENS1_N21_chi35.pkl"
+loadstate_filename = "0109_1555_DENS1_N29_chi35.pkl"
 
 save_state_bool = True
 load_state_bool = True
@@ -835,12 +837,12 @@ def main():
     
     #declaring which desired operator expectations must be tracked
     desired_expectations = []
-    desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), False, 0))
+    #desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), False, 0))
     #desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), True, 0))
     #desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), True, 6))
     
     pure_desired_expectations = []
-    pure_desired_expectations.append(("Sz", Sz, False, 0))
+    #pure_desired_expectations.append(("Sz", Sz, False, 0))
     
     #time evolution of the state
     """
@@ -919,6 +921,7 @@ def main():
 if __name__=="__main__":
     p = Pool(processes=max_cores)
     main()
+    p.close()
 
 elapsed_time = time.time()-t0
 print(f"Elapsed simulation time: {elapsed_time}")
