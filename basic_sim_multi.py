@@ -266,7 +266,7 @@ class MPS:
             st2 = np.tensordot(temp_gammas[j,:,:,:],np.diag(temp_lambdas[j+1,:]), axes=(2,0)) #(d, chi, chi)
             mp = np.tensordot(np.conj(st1), st2, axes=(0,0)) #(chi, chi, chi, chi)    
             m_total = np.tensordot(m_total,mp,axes=([0,1],[0,2]))    
-        return abs(m_total[0,0])
+        return np.real(m_total[0,0])
     
     def calculate_norm(self):
         """ Calculates the norm of the MPS """
@@ -302,7 +302,7 @@ class MPS:
         
         print(f"Starting time evolution of {self.name}")
         for t in range(steps):
-            if (t%2001==0):
+            if (t%2000==0 and t>0):
                 self.store()
             if (t%20==0):
                 print(t)
@@ -745,14 +745,14 @@ max_cores = 5
 
 t0 = time.time()
 #### Simulation variables
-N=29
+N=20
 d=2
 chi=10      #MPS truncation parameter
 newchi=35   #DENS truncation parameter
 
 im_steps = 0
 im_dt = -0.03j
-steps=2000
+steps=20
 dt = 0.02
 
 normalize = False
@@ -798,17 +798,12 @@ NORM_state.twosite_thetas = calculate_thetas_twosite(NORM_state)
 loadstate_folder = "data\\"
 loadstate_filename = "0109_1555_DENS1_N29_chi35.pkl"
 
-save_state_bool = True
-load_state_bool = True
+save_state_bool = False
+load_state_bool = False
 
 ####################################################################################
 #TimeEvol_obj_half = Time_Operator(N, d, JXY, JZ, h, s_coup, dt/2, Diss_bool, True, use_CN) #first and last half timesteps for even sites
 
-
-#temp = np.zeros((d,chi,chi))
-#temp[0,0,0] = np.sqrt(4/5)
-#temp[1,0,0] = 1/np.sqrt(5)
-#MPS1.set_Gamma_singlesite(0, temp)
 
 def main():
     #Import is done here instead of at the beginning of the code to avoid multiprocessing-related errors
@@ -828,13 +823,11 @@ def main():
         
         DENS1 = create_superket(MPS1, newchi)
     
-    #print(DENS1.calculate_norm())
     
     #creating time evolution object
     TimeEvol_obj1 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, Diss_bool, True, use_CN)
-    
-    #TimeEvol_obj2 = Time_Operator(N, d, JXY, JZ, h, s_coup, dt, False, False, use_CN)
-    
+
+
     #declaring which desired operator expectations must be tracked
     desired_expectations = []
     #desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), False, 0))
@@ -845,29 +838,9 @@ def main():
     #pure_desired_expectations.append(("Sz", Sz, False, 0))
     
     #time evolution of the state
-    """
-    for i in range(1, DENS1.N-1, 2):
-        DENS1.apply_twosite(TimeEvol_obj_half.TimeOp, i, normalize)
-    for i in range(0, DENS1.N-1, 2):
-        DENS1.apply_twosite(TimeEvol_obj_half.TimeOp, i, normalize)
-    #"""
-        
-    DENS1.time_evolution(TimeEvol_obj1, normalize, steps, desired_expectations, True, True, True)
-   
-    #print(DENS1.Lambda_mat[1,:4])
-    #print(DENS1.Gamma_mat[0,0,:4,:4])    
-
-    #a=DENS1.Gamma_mat[1,0,:4,:16].copy()
-    #DENS1.time_evolution(TimeEvol_obj1, normalize, 1, desired_expectations, True, False, False)
-    #b=DENS1.Gamma_mat[1,0,:4,:16].copy()
-
-    #c=(a-b)/(a+b)
-    #b[np.where(abs(c)>1)] *= -1
-    #print(a)
-    #print()
-    #print(b)
+    DENS1.time_evolution(TimeEvol_obj1, normalize, steps, desired_expectations, True, False, True)    
+    ########################################################################### Norm, Energy, Current                    
     
-
     if save_state_bool:
         DENS1.store()
 
@@ -881,40 +854,6 @@ def main():
     plt.grid()
     plt.title(f"<Sz> for each site after {steps} steps with dt={dt}")
     plt.show()  
-
-
-    #print(DENS1.Gamma_mat[0,0,0])  
-    #print(DENS1.Gamma_mat[N-1,3,0])    
-
-
-    #expval1 = DENS1.expval_twosite(spin_current_op, int(N/2-1))
-    
-    #DENS1.site_re_orthogonalize(2)
-    #DENS1.force_normalization(DENS1.calculate_vidal_inner(NORM_state))
-    #DENS1.iterative_re_orthogonalize(sweeps=20)
-    
-    
-    """
-    print()
-    expval2 = DENS1.expval_twosite(spin_current_op, int(N/2-1))
-    
-    print(expval1)
-    print(expval2)
-    
-    
-    new_final_Sz = np.zeros(N)
-    for i in range(N):
-        new_final_Sz[i] = DENS1.expval(np.kron(Sz, np.eye(d)), i)
-    plt.plot(final_Sz, linestyle="", marker=".")
-    plt.xlabel("Site")
-    plt.ylabel("<Sz>")
-    plt.grid()
-    plt.title(f"<Sz> for each site after {steps} steps with dt={dt}")
-    plt.show() 
-    
-    print(final_Sz - new_final_Sz)
-    """
-
     pass
 
 
