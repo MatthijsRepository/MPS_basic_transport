@@ -47,7 +47,7 @@ Every 20 timestep the current timestep is printed, to keep track of progress.
 After completing the time evolution for the number of desired steps, the desired tracked quantities are plotted.
 
 ### MPS Initializations
-This is the second module, and contains some initialization methods. 
+This is the second module, and contains some initialization methods. \\ 
 "Halfstate": a product state of 1/sqrt(2) * (up + down).
 "LU_RD": a state with a spin profile that is a linear interpolation from completely 'up' on the left end to completely 'down' on the right end, scaled with a "scale_factor".
 "Flipstate": alternating up and down spins.
@@ -63,8 +63,8 @@ If you have any questions feel free to ask them!
 ### Speedups you may find useful later
 I have made this code as simple as possible to use, but is therefore also not the most efficient. Should you need higher performance I have some speedups available.
 First, calculating the spin profile of the entire chain requires contracting the entire MPS, which means we do a lot of calculations multiple times. I have a straightforwardly adapted routine to cut the number of redundant calculations in half.
-Second, regular python code only uses a single core. It is likely your pc or laptop has multiple cores, the exact number you can check under the 'performance' of the task manager.
-I have a code which parrallelizes the TEBD sweep; it distributes the application of twosite operators over all your cores to do these calculations simultanously, giving a significant speedup. Naturally, this can also be used to parrallelize other calculations should you want.
+Second, regular python code only uses a single core. It is likely your pc or laptop has multiple cores, the exact number you can check under the 'performance' tab of the task manager.
+I have a code which parallelizes the TEBD sweep; it distributes the application of twosite operators over all your cores to do these calculations simultanously, giving a significant speedup. Naturally, this can also be used to parallelize other calculations should you want.
 To get the most out of multiprocessing I recommend to connect your laptop to a power source. You should see a significantly higher CPU usage.
 Keep in mind that using this much computer power over extended periods may affect battery life. Should you need to run a high quantity of computationally demanding tasks, you can inquire if you could be allowed to let these calculations run on a cluster.
 
