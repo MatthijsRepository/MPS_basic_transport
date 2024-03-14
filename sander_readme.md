@@ -47,7 +47,7 @@ Every 20 timestep the current timestep is printed, to keep track of progress.
 After completing the time evolution for the number of desired steps, the desired tracked quantities are plotted.
 
 ### MPS Initializations
-This is the second module, and contains some initialization methods. \\ 
+This is the second module, and contains some initialization methods. 
 "Halfstate": a product state of 1/sqrt(2) * (up + down).
 "LU_RD": a state with a spin profile that is a linear interpolation from completely 'up' on the left end to completely 'down' on the right end, scaled with a "scale_factor".
 "Flipstate": alternating up and down spins.
