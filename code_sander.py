@@ -274,7 +274,7 @@ class MPS:
             if self.is_density:
                 for i in range(self.N):
                     Sz_expvals[i,t] = self.expval(np.kron(Sz, np.eye(d)), i)
-                Sz_expvals[:,t] *= 1/self.trace[t]
+                #Sz_expvals[:,t] *= 1/self.trace[t]
             else:
                 for i in range(self.N):
                     Sz_expvals[i,t] = self.expval(Sz, i)
@@ -566,15 +566,15 @@ def calculate_thetas_twosite(state):
 ####################################################################################
 t0 = time.time()
 #### Simulation variables
-N=8         #System Lenght
+N=8         #System Length
 d=2         #Spin dimension -- do not change
 chi=20      #MPS truncation parameter
-newchi=30   #DENS truncation parameter
+newchi=40   #DENS truncation parameter
 
 im_steps = 0            #Number of timesteps in imaginary time
 im_dt = -0.03j          #Size of imaginary timestep
-steps=20               # '' for real timestep
-dt = 0.02               # '' for real timestep
+steps=400               # '' for real timestep
+dt = 0.01               # '' for real timestep
 
 normalize = True        #whether to maintain MPS normalization
 use_CN = False          #to use Crank-Nicolson approximation
