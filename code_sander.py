@@ -206,7 +206,7 @@ class MPS:
             temp_Lambda = self.Lambda_mat[site+1].copy()
             temp_Gamma = self.Gamma_mat[site:site+2].copy()
             self.apply_twosite(Op,site,False)
-            result = self.calculate_inner_product(NORM_state)
+            result = self.calculate_vidal_inner(NORM_state)
             self.Lambda_mat[site+1] = temp_Lambda
             self.Gamma_mat[site:site+2] = temp_Gamma
             return result
