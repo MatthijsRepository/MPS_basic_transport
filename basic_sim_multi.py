@@ -1,14 +1,10 @@
 import os
-os.chdir("C:\\Users\\matth\\OneDrive\\Documents\\TUDelft\\MEP\\code\\MPS_basic_transport")
-
-print(os.getcwd())
+os.chdir(os.path.dirname(os.path.realpath(__file__)))
 
 from multiprocessing import Pool
 
 import numpy as np
 from scipy.linalg import expm
-from scipy.sparse.linalg import eigs
-from scipy.linalg.lapack import dgesvd, zgesvd
 
 import matplotlib.pyplot as plt
 
@@ -32,6 +28,7 @@ class MPS:
         self.is_density = is_density
         if is_density:
             self.name = "DENS"+str(ID)
+            self.trace = np.array([])
         else: 
             self.name = "MPS"+str(ID)
         
@@ -39,9 +36,6 @@ class MPS:
         self.Gamma_mat = np.zeros((N,d,chi,chi), dtype=complex)
 
         self.locsize = np.zeros(N+1, dtype=int)     #locsize tells us which slice of the matrices at each site holds relevant information
-        
-        self.flipped_factor = np.ones(N)
-        self.flipped_factor[:self.N//2*2] *= -1 # all sites start with a flip factor -1, except the last site ONLY in case of odd chain length
         
         self.spin_current_values = np.array([])
         self.normalization = np.array([])
@@ -66,18 +60,6 @@ class MPS:
         
         print(f"Stored {filename} to memory")
         pass        
-      
-    def set_Gamma_Lambda(self, gammas, lambdas, locsize):
-        """ Custom initialization of the MPS """
-        self.Gamma_mat = gammas
-        self.Lambda_mat = lambdas
-        self.locsize = locsize
-        return
-    
-    def set_Gamma_singlesite(self, site, matrix):
-        """ sets a gamma matrices of a site to a desired matrix  """
-        self.Gamma_mat[site,:,:,:] = matrix
-        return   
     
     def construct_vidal_supermatrices(self, newchi):
         """ Constructs a superket of the density operator in Vidal decomposition """
@@ -133,13 +115,11 @@ class MPS:
                 theta_prime = np.tensordot(np.diag(Y[:chi]), theta_prime, axes=(1,1))
         return
     
-    def apply_singlesite(self, TimeOp, i, normalize):
+    def apply_singlesite(self, TimeOp, i):
         """ Applies a single-site operator to site i """
         theta = self.contract(i,i)
         theta_prime = np.tensordot(theta, TimeOp, axes=(2,1)) #(chi, chi, d)
-        if normalize:
-            theta_prime = theta_prime / np.linalg.norm(theta_prime)
-        
+
         inv_lambdas  = self.Lambda_mat[i].copy()
         inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
         theta_prime = np.tensordot(np.diag(inv_lambdas), theta_prime, axes=(1,0)) #(chi, chi, d) 
@@ -154,38 +134,28 @@ class MPS:
         """ Applies a two-site operator to sites i and i+1 """
         theta = self.contract(i,i+1) #(chi, chi, d, d)
         #operator is applied, tensor is reshaped
-        theta_prime = np.tensordot(theta,TimeOp[i,:,:,:,:],axes=([2,3],[2,3])) #(chi,chi,d,d)        
+        theta_prime = np.tensordot(theta,TimeOp[:,:,:,:],axes=([2,3],[2,3])) #(chi,chi,d,d)        
         theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(self.d*self.chi, self.d*self.chi)) #first to (d, chi, d, chi), then (d*chi, d*chi)
         X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
-        """
         if normalize:
-            if self.is_density:
-                self.Lambda_mat[i+1,:] = Y[:self.chi]*1/np.linalg.norm(Y[:self.chi])
-                #self.Lambda_mat[i+1,:] = Y[:self.chi]
-            else:   
-                self.Lambda_mat[i+1,:] = Y[:self.chi]*1/np.linalg.norm(Y[:self.chi])
+            self.Lambda_mat[i+1,:] = Y[:self.chi]*1/np.linalg.norm(Y[:self.chi])
         else:
             self.Lambda_mat[i+1,:] = Y[:self.chi]
-        """
-        new_Lambda_mat = Y[:self.chi]
         
         #truncation, and multiplication with the inverse lambda matrix of site i, where care is taken to avoid divides by 0
         X = np.reshape(X[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi)) 
         inv_lambdas  = self.Lambda_mat[i, :self.locsize[i]].copy()
         inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
         tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:,:self.locsize[i],:self.locsize[i+1]],axes=(1,1)) #(chi, d, chi)
-        #self.Gamma_mat[i, :, :self.locsize[i],:self.locsize[i+1]] = np.transpose(tmp_gamma,(1,0,2))
-        new_Gamma_mat_0 = np.transpose(tmp_gamma,(1,0,2))
+        self.Gamma_mat[i, :, :self.locsize[i],:self.locsize[i+1]] = np.transpose(tmp_gamma,(1,0,2))
         
         #truncation, and multiplication with the inverse lambda matrix of site i+2, where care is taken to avoid divides by 0
         Z = np.reshape(Z[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))
         Z = np.transpose(Z,(0,2,1))
         inv_lambdas = self.Lambda_mat[i+2, :self.locsize[i+2]].copy()
         inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
-        #tmp_gamma = np.tensordot(Z[:,:self.locsize[i+1],:self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
-        #self.Gamma_mat[i+1, :, :self.locsize[i+1],:self.locsize[i+2]] = tmp_gamma    
-        new_Gamma_mat_1 = np.tensordot(Z[:,:self.locsize[i+1],:self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
-        return (new_Lambda_mat, new_Gamma_mat_0, new_Gamma_mat_1)
+        self.Gamma_mat[i+1, :, :self.locsize[i+1],:self.locsize[i+2]] = np.tensordot(Z[:,:self.locsize[i+1],:self.locsize[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
+        return
      
     def TEBD(self, TimeOp, Diss_arr, normalize, Diss_bool):
         """ TEBD algorithm """
@@ -199,7 +169,7 @@ class MPS:
         
         if Diss_bool:
             for i in range(len(Diss_arr["index"])):
-                self.apply_singlesite(Diss_arr["TimeOp"][i], Diss_arr["index"][i], normalize)
+                self.apply_singlesite(Diss_arr["TimeOp"][i], Diss_arr["index"][i])
         """
         for i in range(0, self.N-1, 2):
             self.apply_twosite(TimeEvol_obj_half.TimeOp, i, normalize)
@@ -211,26 +181,19 @@ class MPS:
             
         return
     
-    def sign_flip_check(self, Sz_array):
-        """ Checks which sites have experienced a sign flip <Sz> not due to a zero-crossing 
-            The global variable flip_threshold determines to ingnore a site due to a likely zero-crossing """
-        Sz_array[ np.where(np.abs(Sz_array[:,-2])<flip_threshold) , :] = 0
-        flipped_sites = np.sign(Sz_array[:,-2]) - np.sign(Sz_array[:,-1])
-        flipped_sites = np.nonzero(flipped_sites)[0]
-        self.flipped_factor[flipped_sites] *= -1
-        return flipped_sites
     
     def expval(self, Op, site):
         """ Calculates the expectation value of an operator Op for a single site """
-        theta = self.contract(site,site) #(chi, chi, d)
-        theta_prime = np.tensordot(theta, Op, axes=(2,1)) #(chi, chi, d)
-        #"""
-        #NOTE:  for singlesite expectations the expectation <<p |A| p>> matches the result for pure state evolutions
-        #        hence that specific expectation should be used
         if self.is_density:     #In case of density matrices we must take the trace  
-            return np.real(np.tensordot(theta_prime, NORM_state.singlesite_thetas, axes=([0,1,2],[2,1,0])))
+            Gamma_temp = self.Gamma_mat[site].copy()
+            self.apply_singlesite(Op, site)
+            result = self.calculate_vidal_inner(NORM_state)
+            self.Gamma_mat[site] = Gamma_temp
+            return result
         else:
-            return np.real(np.tensordot(theta_prime, np.conj(theta), axes=([0,1,2],[0,2,1])))
+            theta = self.contract(site,site) #(chi, chi, d)
+            theta_prime = np.tensordot(theta, Op, axes=(2,1)) #(chi, chi, d)
+            return np.real(np.tensordot(theta_prime, np.conj(theta), axes=([0,1,2],[0,1,2])))
     
     def expval_chain(self, Op):
         """ calculates expectation value for operator Op for the entire chain """
@@ -241,14 +204,20 @@ class MPS:
         
     def expval_twosite(self, Op, site):
         """ Calculates expectation value for a twosite operator Op at sites site and site+1 """
-        theta = self.contract(site, site+1)
-        Op = np.reshape(Op, (self.d,self.d,self.d,self.d))
-        theta_prime = np.tensordot(theta, Op,axes=([2,3],[2,3])) #(chi,chi,d,d) 
         if self.is_density:
-            return np.tensordot(theta_prime, NORM_state.twosite_thetas, axes=([0,1,2,3],[0,3,1,2]))
+            temp_Lambda = self.Lambda_mat[site+1].copy()
+            temp_Gamma = self.Gamma_mat[site:site+2].copy()
+            Op = Op.reshape(self.d,self.d,self.d,self.d)
+            self.apply_twosite(Op,site,False)
+            result = self.calculate_vidal_inner(NORM_state)
+            self.Lambda_mat[site+1] = temp_Lambda
+            self.Gamma_mat[site:site+2] = temp_Gamma
+            return result
         else:
+            theta = self.contract(site, site+1)
+            Op = np.reshape(Op, (self.d,self.d,self.d,self.d))
+            theta_prime = np.tensordot(theta, Op,axes=([2,3],[2,3])) #(chi,chi,d,d) 
             return np.real(np.tensordot(theta_prime, np.conj(theta), axes=([0,1,2,3],[0,3,1,2])))
-
         
     def calculate_energy(self, TimeEvol_obj):
         """ calculate the energy of the entire chain from a given Hamiltonian """
@@ -261,11 +230,11 @@ class MPS:
         """ Calculates the inner product of the MPS with another MPS """
         m_total = np.eye(self.chi)
         temp_gammas, temp_lambdas = MPS2.Gamma_mat, MPS2.Lambda_mat  #retrieve gammas and lambdas of MPS2
-        for j in range(0, self.N):        
+        for j in range(0, self.N):
             st1 = np.tensordot(self.Gamma_mat[j,:,:,:],np.diag(self.Lambda_mat[j+1,:]), axes=(2,0)) #(d, chi, chi)
             st2 = np.tensordot(temp_gammas[j,:,:,:],np.diag(temp_lambdas[j+1,:]), axes=(2,0)) #(d, chi, chi)
-            mp = np.tensordot(np.conj(st1), st2, axes=(0,0)) #(chi, chi, chi, chi)    
-            m_total = np.tensordot(m_total,mp,axes=([0,1],[0,2]))    
+            m_total = np.tensordot(m_total, np.conj(st1), axes=(0,1)) #(chi, d, chi)
+            m_total = np.tensordot(m_total, st2, axes=([1,0],[0,1])) #(chi, chi)
         return np.real(m_total[0,0])
     
     def calculate_norm(self):
@@ -288,13 +257,8 @@ class MPS:
         
         Sz_expvals = np.zeros((self.N, steps),dtype=float)
         
-        if track_normalization:
-            Normalization = np.zeros(steps)
         if track_energy:
             energy = np.zeros(steps)
-        #if (track_current==True and Diss_bool==True):
-        #    if steps>current_cutoff:
-        #        spin_current_values = np.zeros(steps-current_cutoff)
         
         exp_values = np.ones((len(desired_expectations), self.N, steps)) #array to store expectation values in
                     
@@ -306,45 +270,36 @@ class MPS:
                 self.store()
             if (t%20==0):
                 print(t)
-            
-            #Sz_expvals[:,t] = self.expval_chain(np.kron(Sz,np.eye(d)))
-            for i in range(self.N):
-                Sz_expvals[i,t] = self.expval(np.kron(Sz, np.eye(d)), i)
-            if (t>=1):
-                Sz_expvals[:,t] *= self.flipped_factor
-                sign_flips = self.sign_flip_check(Sz_expvals[:,t-1:t+1].copy())
-                Sz_expvals[sign_flips,t] *= -1
-                
+
             
             if track_normalization:
-                Normalization[t] = self.calculate_norm()
-                self.normalization = np.append(self.normalization, Normalization[t])
-                #if Normalization[t] < 0.995:
-                #    self.force_normalization(Normalization[t])
+                self.normalization = np.append(self.normalization, self.calculate_vidal_inner(self))
+                if self.is_density:
+                    self.trace= np.append(self.trace, self.calculate_vidal_inner(NORM_state))
             if track_energy:
                 energy[t] = self.calculate_energy(TimeEvol_obj)
             if (track_current==True and Diss_bool==True):
-                #if t>=current_cutoff:
-                #    middle_site = int(np.round(self.N/2-1))
-                #    spin_current_values[t-current_cutoff] = self.flipped_factor[middle_site] * self.flipped_factor[middle_site+1] * np.real( self.expval_twosite(spin_current_op, middle_site) )
                 middle_site = int(np.round(self.N/2-1))
-                self.spin_current_values = np.append(self.spin_current_values, self.flipped_factor[middle_site] * self.flipped_factor[middle_site+1] * np.real( self.expval_twosite(spin_current_op, middle_site) ))
-                
-            """              
-            for i in range(len(desired_expectations)):
-                if desired_expectations[i][2] == True:
-                    exp_values[i,:,t] *= self.expval(desired_expectations[i][1], desired_expectations[i][3])
-                else:
-                    exp_values[i,:,t] *= self.expval_chain(desired_expectations[i][1])
-            """
+                self.spin_current_values = np.append(self.spin_current_values, np.real( self.expval_twosite(spin_current_op, middle_site) ))
+                if self.is_density:
+                    self.spin_current_values[-1] *= 1/self.trace[t]
+            """   
+            if self.is_density:
+                for i in range(self.N):
+                    Sz_expvals[i,t] = self.expval(np.kron(Sz, np.eye(d)), i)
+                Sz_expvals[:,t] *= 1/self.trace[t]
+            else:
+                for i in range(self.N):
+                    Sz_expvals[i,t] = self.expval(Sz, i)
+            #"""
             
             #self.TEBD(TimeOp, Diss_arr, normalize, Diss_bool)
             TEBD_multi(self, TimeOp, Diss_arr, normalize, Diss_bool)
  
         #### Plotting expectation values
-        
         time_axis = np.arange(steps)*abs(TimeEvol_obj.dt)
         
+        """
         for i in range(self.N):
             plt.plot(time_axis, Sz_expvals[i,:], label="Site "+str(i))
         plt.title(f"<Sz> of {self.name} over time")
@@ -353,14 +308,22 @@ class MPS:
         plt.grid()
         plt.legend(bbox_to_anchor=(1.04, 0.5), loc="center left", borderaxespad=0)
         plt.show()
+        #"""
         
         if track_normalization:
-            plt.plot(time_axis, Normalization)
+            plt.plot(time_axis, self.normalization)
             plt.title(f"Normalization of {self.name} over time")
             plt.xlabel("Time")
             plt.ylabel("Normalization")
             plt.grid()
             plt.show()
+            if self.is_density:
+                plt.plot(time_axis, self.trace)
+                plt.title(f"Trace of {self.name} over time")
+                plt.xlabel("Time")
+                plt.ylabel("Trace")
+                plt.grid()
+                plt.show()
         if track_energy:
             plt.plot(time_axis, energy)
             plt.title(f"Energy of {self.name}")
@@ -378,48 +341,12 @@ class MPS:
             plt.ylabel("Current")
             plt.grid()
             plt.show()
-            #print(self.spin_current_values[-1])
-            
-
-        
-
-        """
-        for i in range(len(desired_expectations)):
-            if desired_expectations[i][2]==False:
-                for j in range(self.N):
-                    plt.plot(time_axis, exp_values[i,j,:], label=f"Site {j}")
-            else:
-                plt.plot(time_axis, exp_values[i,0,:], label=f"Site {desired_expectations[i][3]}")
-            plt.xlabel("Time")
-            plt.ylabel(f"<{desired_expectations[i][0]}>")
-            plt.legend(bbox_to_anchor=(1.04, 0.5), loc="center left", borderaxespad=0)
-            #plt.legend()
-            plt.title(f"Plot of <{desired_expectations[i][0]}> of {self.name} over time")
-            plt.grid()
-            plt.show()
-        """
         return
     
-    def force_normalization(self, normalization):
-        global renormalization_type
-        if self.is_density==False:
-            print("This function only works for DENS type objects")
-            return
-        
-        if normalization==None:
-            normalization = self.calculate_norm()
-        
-        if renormalization_type==0: # Rescale lambdas
-            site_rescale_factor = (1/normalization)**(1/(self.N-1))
-            self.Lambda_mat[1:N] *= site_rescale_factor
-        if renormalization_type==1: # Rescale gammas        
-            site_rescale_factor = (1/normalization)**(1/self.N)
-            self.Gamma_mat *= site_rescale_factor
-        return
  
 
 
-def global_apply_twosite(TimeOp, normalize, Lambda_mat, Gamma_mat, locsize, d, chi):
+def global_apply_twosite(TimeOp, normalize, Lambda_mat, Gamma_mat, locsize, d, chi, is_density):
         """ Applies a two-site operator to sites i and i+1 """
         #theta = self.contract(i,i+1) #(chi, chi, d, d)
         theta = np.tensordot(np.diag(Lambda_mat[0,:]), Gamma_mat[0,:,:,:], axes=(1,1)) #(chi, d, chi)
@@ -430,24 +357,17 @@ def global_apply_twosite(TimeOp, normalize, Lambda_mat, Gamma_mat, locsize, d, c
         theta_prime = np.tensordot(theta,TimeOp[:,:,:,:],axes=([1,2],[2,3])) #(chi,chi,d,d)        
         theta_prime = np.reshape(np.transpose(theta_prime, (2,0,3,1)),(d*chi, d*chi)) #first to (d, chi, d, chi), then (d*chi, d*chi)
         X, Y, Z = np.linalg.svd(theta_prime); Z = Z.T
-        """
+
         if normalize:
-            if is_density:
-                Lambda_mat[i+1,:] = Y[:chi]*1/np.linalg.norm(Y[:chi])
-                #Lambda_mat[i+1,:] = Y[:chi]
-            else:   
-                Lambda_mat[i+1,:] = Y[:chi]*1/np.linalg.norm(Y[:chi])
+            new_Lambda_mat = Y[:chi] * 1/np.linalg.norm(Y[:chi])
         else:
-            Lambda_mat[i+1,:] = Y[:chi]
-        """
-        new_Lambda_mat = Y[:chi]
+            new_Lambda_mat = Y[:chi]
         
         #truncation, and multiplication with the inverse lambda matrix of site i, where care is taken to avoid divides by 0
         X = np.reshape(X[:d*chi, :chi], (d, chi, chi)) 
         inv_lambdas  = Lambda_mat[0, :locsize[0]].copy()
         inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
         tmp_gamma = np.tensordot(np.diag(inv_lambdas),X[:,:locsize[0],:locsize[1]],axes=(1,1)) #(chi, d, chi)
-        #Gamma_mat[i, :, :locsize[i],:locsize[i+1]] = np.transpose(tmp_gamma,(1,0,2))
         new_Gamma_mat_0 = np.transpose(tmp_gamma,(1,0,2))
         
         #truncation, and multiplication with the inverse lambda matrix of site i+2, where care is taken to avoid divides by 0
@@ -455,8 +375,6 @@ def global_apply_twosite(TimeOp, normalize, Lambda_mat, Gamma_mat, locsize, d, c
         Z = np.transpose(Z,(0,2,1))
         inv_lambdas = Lambda_mat[2, :locsize[2]].copy()
         inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
-        #tmp_gamma = np.tensordot(Z[:,:locsize[i+1],:locsize[i+2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
-        #Gamma_mat[i+1, :, :locsize[i+1],:locsize[i+2]] = tmp_gamma    
         new_Gamma_mat_1 = np.tensordot(Z[:,:locsize[1],:locsize[2]], np.diag(inv_lambdas), axes=(2,0)) #(d, chi, chi)
         return (new_Lambda_mat, new_Gamma_mat_0, new_Gamma_mat_1)
         
@@ -467,8 +385,7 @@ def TEBD_multi(State, TimeOp, Diss_arr, normalize, Diss_bool):
             # Map the function to the indices of the array
             #A_new = p.starmap(global_two_site_operator, [(State.A[i],) for i in range(State.N)])
         #new_matrices = p.starmap(State.apply_twosite, [(TimeOp, i, normalize) for i in range(j, State.N-1, 2)])
-        new_matrices = p.starmap(global_apply_twosite, [(TimeOp[i], normalize, State.Lambda_mat[i:i+3], State.Gamma_mat[i:i+2], State.locsize[i:i+3], State.d, State.chi) for i in range(j, State.N-1, 2)])
-
+        new_matrices = p.starmap(global_apply_twosite, [(TimeOp[i], normalize, State.Lambda_mat[i:i+3], State.Gamma_mat[i:i+2], State.locsize[i:i+3], State.d, State.chi, State.is_density) for i in range(j, State.N-1, 2)])
         for i in range(j, State.N-1, 2):
             State.Lambda_mat[i+1] = new_matrices[int(i//2)][0]
             State.Gamma_mat[i, :, :State.locsize[i],:State.locsize[i+1]] = new_matrices[int(i//2)][1]
@@ -476,32 +393,11 @@ def TEBD_multi(State, TimeOp, Diss_arr, normalize, Diss_bool):
         
     if Diss_bool:
             for i in range(len(Diss_arr["index"])):
-                State.apply_singlesite(Diss_arr["TimeOp"][i], Diss_arr["index"][i], normalize)
+                State.apply_singlesite(Diss_arr["TimeOp"][i], Diss_arr["index"][i])
     pass 
 
 
-"""
-def TEBD_multi(State, TimeOp, Diss_arr, normalize, Diss_bool):
-    #Even sites
-    for i in range(0, State.N-1, 2):
-        new_matrices = State.apply_twosite(TimeOp, i, normalize)
-        State.Lambda_mat[i+1] = new_matrices[0]#[i][0]
-        State.Gamma_mat[i, :, :State.locsize[i],:State.locsize[i+1]] = new_matrices[1]#[i][1]
-        State.Gamma_mat[i+1, :, :State.locsize[i+1],:State.locsize[i+2]] = new_matrices[2]#[i][2] 
-        
-    #Odd sites
-    for i in range(1, State.N-1, 2):
-        new_matrices = State.apply_twosite(TimeOp, i, normalize)
-        State.Lambda_mat[i+1] = new_matrices[0]#[i][0]
-        State.Gamma_mat[i, :, :State.locsize[i],:State.locsize[i+1]] = new_matrices[1]#[i][1]
-        State.Gamma_mat[i+1, :, :State.locsize[i+1],:State.locsize[i+2]] = new_matrices[2]#[i][2] 
-    
-    if Diss_bool:
-            for i in range(len(Diss_arr["index"])):
-                State.apply_singlesite(Diss_arr["TimeOp"][i], Diss_arr["index"][i], normalize)
-    pass
 
-#"""
 ########################################################################################  
 
 class Time_Operator:
@@ -586,7 +482,8 @@ class Time_Operator:
             H_arr[i, self.N-2,:,:] = H_R
 
         #Note: H_arr[0] is the correct Hamiltonian to use for energy calculations
-        return (H_arr[0] - np.conj(H_arr[1])), H_arr[0]     
+        #return (H_arr[0] - np.conj(H_arr[1])), H_arr[0]
+        return (H_arr[0] - np.transpose(H_arr[1], (0,2,1))), H_arr[0]    
 
     def Create_TimeOp(self, dt, use_CN):
         if self.is_density:
@@ -684,7 +581,9 @@ def create_superket(State, newchi):
     
     name = "DENS" + str(State.ID)
     newDENS = MPS(State.ID, State.N, State.d**2, newchi, True)
-    newDENS.set_Gamma_Lambda(gammas, lambdas, locsize)
+    newDENS.Gamma_mat = gammas
+    newDENS.Lambda_mat = lambdas
+    newDENS.locsize = locsize
     globals()[name] = newDENS
     return newDENS
 
@@ -704,7 +603,9 @@ def create_maxmixed_normstate():
     locsize = np.minimum((d**2)**arr, newchi**2)
     
     NORM_state = MPS(0, N, d**2, newchi, True)
-    NORM_state.set_Gamma_Lambda(gammas, lambdas, locsize)
+    NORM_state.Gamma_mat = gammas
+    NORM_state.Lambda_mat = lambdas
+    NORM_state.locsize = locsize
     return NORM_state
 
     
@@ -733,14 +634,6 @@ def calculate_thetas_twosite(state):
 
 
 ####################################################################################
-
-#Higher order TEBD
-#Odd/Even number of spins
-#chi
-#dt
-#renormalization
-
-
 max_cores = 5
 
 t0 = time.time()
@@ -748,19 +641,17 @@ t0 = time.time()
 N=20
 d=2
 chi=10      #MPS truncation parameter
-newchi=35   #DENS truncation parameter
+newchi=45   #DENS truncation parameter
 
 im_steps = 0
 im_dt = -0.03j
-steps=20
+steps=1000
 dt = 0.02
 
-normalize = False
+normalize = True
 use_CN = False #choose if you want to use Crank-Nicolson approximation
 Diss_bool = True
-renormalization_type = 0        # 0 for lambdas, 1 for gammas
 
-flip_threshold = 0.01 #Threshold below which an <Sz> sign flip is not flagged as being caused by the SVD
 
 
 #### Hamiltonian and Lindblad constants
@@ -781,8 +672,6 @@ Sz = np.array([[1,0],[0,-1]])
 
 
 #### Spin current operator and cutoff factor
-cutoff_factor = 0
-current_cutoff=round(steps * cutoff_factor) 
 spin_current_op = 2 * ( np.kron( np.kron(Sx, np.eye(d)) , np.kron(Sy, np.eye(d))) - np.kron( np.kron(Sy, np.eye(d)) , np.kron(Sx, np.eye(d))) )
 #equivalent operator in terms of Sp and Sm
 #spin_current_op = 2*1j* ( np.kron( np.kron(Sp, np.eye(d)) , np.kron(Sm, np.eye(d))) - np.kron( np.kron(Sm, np.eye(d)) , np.kron(Sp, np.eye(d))) )
@@ -819,7 +708,7 @@ def main():
         #temp = np.zeros((d,chi,chi))
         #temp[0,0,0] = np.sqrt(4/5)
         #temp[1,0,0] = 1/np.sqrt(5)
-        #MPS1.set_Gamma_singlesite(0, temp)
+        #MPS1.Gamma_mat[0] = temp
         
         DENS1 = create_superket(MPS1, newchi)
     
@@ -830,12 +719,8 @@ def main():
 
     #declaring which desired operator expectations must be tracked
     desired_expectations = []
-    #desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), False, 0))
-    #desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), True, 0))
-    #desired_expectations.append(("Sz", np.kron(Sz, np.eye(d)), True, 6))
     
     pure_desired_expectations = []
-    #pure_desired_expectations.append(("Sz", Sz, False, 0))
     
     #time evolution of the state
     DENS1.time_evolution(TimeEvol_obj1, normalize, steps, desired_expectations, True, False, True)    
@@ -847,7 +732,7 @@ def main():
 
     final_Sz = np.zeros(N)
     for i in range(N):
-        final_Sz[i] = DENS1.expval(np.kron(Sz, np.eye(d)), i) * DENS1.flipped_factor[i]
+        final_Sz[i] = DENS1.expval(np.kron(Sz, np.eye(d)), i)
     plt.plot(final_Sz, linestyle="", marker=".")
     plt.xlabel("Site")
     plt.ylabel("<Sz>")
