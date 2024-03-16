@@ -303,7 +303,6 @@ class MPS:
             self.TEBD(TimeOp, Diss_arr, normalize, Diss_bool)
  
         #### Plotting expectation values
-        
         time_axis = np.arange(steps)*abs(TimeEvol_obj.dt)
         
         for i in range(self.N):
@@ -316,14 +315,14 @@ class MPS:
         plt.show()
         
         if track_normalization:
-            plt.plot(time_axis, self.normalization)
+            plt.plot(time_axis, self.normalization[-steps:])
             plt.title(f"Normalization of {self.name} over time")
             plt.xlabel("Time")
             plt.ylabel("Normalization")
             plt.grid()
             plt.show()
             if self.is_density:
-                plt.plot(time_axis, self.trace)
+                plt.plot(time_axis, self.trace[-steps:])
                 plt.title(f"Trace of {self.name} over time")
                 plt.xlabel("Time")
                 plt.ylabel("Trace")
@@ -338,8 +337,6 @@ class MPS:
             plt.show()
         
         if (track_current==True and Diss_bool==True):
-            print("Time averaged spin current through middle site:")
-            #print((np.average(self.spin_current_values)))
             plt.plot(self.spin_current_values)
             plt.title(f"Current of {self.name} over time")
             plt.xlabel("Last x timesteps")

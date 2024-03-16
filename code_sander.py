@@ -297,14 +297,14 @@ class MPS:
         plt.show()
         
         if track_normalization:
-            plt.plot(time_axis, self.normalization)
+            plt.plot(time_axis, self.normalization[-steps:])
             plt.title(f"Normalization of {self.name} over time")
             plt.xlabel("Time")
             plt.ylabel("Normalization")
             plt.grid()
             plt.show()
             if self.is_density:
-                plt.plot(time_axis, self.trace)
+                plt.plot(time_axis, self.trace[-steps:])
                 plt.title(f"Trace of {self.name} over time")
                 plt.xlabel("Time")
                 plt.ylabel("Trace")

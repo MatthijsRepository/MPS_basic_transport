@@ -82,7 +82,7 @@ class MPS:
         theta = np.rollaxis(theta, -1, 1) #(chi, chi, d, ..., d)
         return theta
     
-    def decompose_contraction(self, theta, i):
+    def decompose_contraction(self, theta, i, normalize):
         """ decomposes a given theta back into Vidal decomposition. i denotes the leftmost site contracted into theta """
         num_sites = np.ndim(theta)-2 # The number of sites contained in theta
         temp = num_sites-1           # Total number of loops required
@@ -93,7 +93,10 @@ class MPS:
             X, Y, Z = np.linalg.svd(theta); Z = Z.T
             #This can be done more efficiently by leaving out the Z=Z.T and only doing so in case of j==2
             
-            self.Lambda_mat[i+j+1,:] = Y[:self.chi]
+            if normalize==True:
+                self.Lambda_mat[i+j+1,:] = Y[:self.chi] *1/np.linalg.norm(Y[:self.chi])
+            else:
+                self.Lambda_mat[i+j+1,:] = Y[:self.chi]
             
             X = np.reshape(X[:self.d*self.chi, :self.chi], (self.d, self.chi, self.chi))
             inv_lambdas = self.Lambda_mat[i+j, :self.locsize[i+j]].copy()
@@ -330,14 +333,14 @@ class MPS:
         #"""
         
         if track_normalization:
-            plt.plot(time_axis, self.normalization)
+            plt.plot(time_axis, self.normalization[-steps:])
             plt.title(f"Normalization of {self.name} over time")
             plt.xlabel("Time")
             plt.ylabel("Normalization")
             plt.grid()
             plt.show()
             if self.is_density:
-                plt.plot(time_axis, self.trace)
+                plt.plot(time_axis, self.trace[-steps:])
                 plt.title(f"Trace of {self.name} over time")
                 plt.xlabel("Time")
                 plt.ylabel("Trace")
@@ -352,8 +355,6 @@ class MPS:
             plt.show()
         
         if (track_current==True and Diss_bool==True):
-            print("Time averaged spin current through middle site:")
-            #print((np.average(self.spin_current_values)))
             plt.plot(self.spin_current_values)
             plt.title(f"Current of {self.name} over time")
             plt.xlabel("Last x timesteps")
