@@ -319,8 +319,6 @@ class MPS:
             plt.show()
         
         if (track_current==True and Diss_bool==True):
-            print("Time averaged spin current through middle site:")
-            #print((np.average(self.spin_current_values)))
             plt.plot(self.spin_current_values)
             plt.title(f"Current of {self.name} over time")
             plt.xlabel("Last x timesteps")
@@ -575,12 +573,12 @@ newchi=40   #DENS truncation parameter
 
 im_steps = 0            #Number of timesteps in imaginary time
 im_dt = -0.03j          #Size of imaginary timestep
-steps=200               # '' for real timestep
+steps=1000               # '' for real timestep
 dt = 0.02               # '' for real timestep
 
 normalize = True        #whether to maintain MPS normalization
 use_CN = False          #to use Crank-Nicolson approximation
-Diss_bool = False       #to implement dissipative terms
+Diss_bool = True       #to implement dissipative terms
 
 
 #### Hamiltonian and Lindblad constants
