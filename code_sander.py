@@ -270,7 +270,8 @@ class MPS:
             if (track_current==True and Diss_bool==True):
                middle_site = int(np.round(self.N/2-1))
                self.spin_current_values = np.append(self.spin_current_values, np.real( self.expval_twosite(spin_current_op, middle_site) ))
-                
+               if self.is_density:
+                    self.spin_current_values[-1] *= 1/self.trace[t]
             
             if self.is_density:
                 for i in range(self.N):
