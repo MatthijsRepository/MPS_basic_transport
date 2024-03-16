@@ -205,6 +205,7 @@ class MPS:
         if self.is_density:
             temp_Lambda = self.Lambda_mat[site+1].copy()
             temp_Gamma = self.Gamma_mat[site:site+2].copy()
+            Op = Op.reshape(self.d,self.d,self.d,self.d)
             self.apply_twosite(Op,site,False)
             result = self.calculate_vidal_inner(NORM_state)
             self.Lambda_mat[site+1] = temp_Lambda
@@ -573,8 +574,8 @@ newchi=40   #DENS truncation parameter
 
 im_steps = 0            #Number of timesteps in imaginary time
 im_dt = -0.03j          #Size of imaginary timestep
-steps=400               # '' for real timestep
-dt = 0.01               # '' for real timestep
+steps=200               # '' for real timestep
+dt = 0.02               # '' for real timestep
 
 normalize = True        #whether to maintain MPS normalization
 use_CN = False          #to use Crank-Nicolson approximation
@@ -584,7 +585,7 @@ Diss_bool = False       #to implement dissipative terms
 #### Hamiltonian and Lindblad constants
 h=0                         #Strength of the transverse magnetic field
 JXY=1                       #XY Coupling strength XXZ Hamiltonian
-JZ=1.5                      #Z coupling strength of XXZ Hamiltonian
+JZ=1                      #Z coupling strength of XXZ Hamiltonian
 
 s_coup=1                    #Coupling strength of Dissipative terms
 s_coup = np.sqrt(s_coup)  
