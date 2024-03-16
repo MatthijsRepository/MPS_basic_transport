@@ -196,11 +196,29 @@ class MPS:
             return np.real(np.tensordot(theta_prime, np.conj(theta), axes=([0,1,2],[0,1,2])))
     
     def expval_chain(self, Op):
-        """ calculates expectation value for operator Op for the entire chain """
-        result = np.zeros(self.N)
-        for i in range(self.N):
-            result[i] = self.expval(Op, i)
-        return result
+        """ Calculates expectation values from the left side, by reusing the already
+            contracted part left of the site we want to know our expectation value of
+            after completing calculation, also immediately returns the normalization of the state """
+        expvals = np.zeros(self.N)
+        Left_overlap = np.eye(self.chi)
+        
+        for i in range(N):
+            self.apply_singlesite(Op, i)
+            st1 = np.tensordot(self.Gamma_mat[i,:,:,:],np.diag(self.Lambda_mat[i+1,:]), axes=(2,0)) #(d, chi, chi)
+            sub_expval = np.tensordot(Left_overlap, np.conj(st1), axes=(0,1)) #(chi, d, chi)
+            sub_expval = np.tensordot(sub_expval, NORM_state.singlesite_thetas, axes=([1,0],[0,1])) #(chi, chi)
+            for j in range(i+1, self.N):
+                temp = np.tensordot(self.Gamma_mat[j,:,:,:],np.diag(self.Lambda_mat[j+1,:]), axes=(2,0)) #(d, chi, chi)
+                sub_expval = np.tensordot(sub_expval, np.conj(temp), axes=(0,1)) #(chi, d, chi)
+                sub_expval = np.tensordot(sub_expval, NORM_state.singlesite_thetas, axes=([1,0],[0,1])) #(chi, chi)
+            expvals[i] = np.real(sub_expval[0,0])
+            self.apply_singlesite(Op, i)
+            
+            st1 = np.tensordot(self.Gamma_mat[i,:,:,:],np.diag(self.Lambda_mat[i+1,:]), axes=(2,0)) #(d, chi, chi)
+            Left_overlap = np.tensordot(Left_overlap, np.conj(st1), axes=(0,1)) #(chi, d, chi)
+            Left_overlap = np.tensordot(Left_overlap, NORM_state.singlesite_thetas, axes=([1,0],[0,1])) #(chi, chi)
+        norm = np.real(Left_overlap[0,0])
+        return expvals, norm
         
     def expval_twosite(self, Op, site):
         """ Calculates expectation value for a twosite operator Op at sites site and site+1 """
@@ -285,8 +303,9 @@ class MPS:
                     self.spin_current_values[-1] *= 1/self.trace[t]
             """   
             if self.is_density:
-                for i in range(self.N):
-                    Sz_expvals[i,t] = self.expval(np.kron(Sz, np.eye(d)), i)
+                Sz_expvals[:,t], norm = self.expval_chain(np.kron(Sz, np.eye(d)))
+                #for i in range(self.N):
+                #    Sz_expvals[i,t] = self.expval(np.kron(Sz, np.eye(d)), i)
                 Sz_expvals[:,t] *= 1/self.trace[t]
             else:
                 for i in range(self.N):
