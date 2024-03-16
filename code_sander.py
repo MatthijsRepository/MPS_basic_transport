@@ -115,7 +115,7 @@ class MPS:
                 theta_prime = np.tensordot(np.diag(Y[:chi]), theta_prime, axes=(1,1))
         return
     
-    def apply_singlesite(self, TimeOp, i, normalize):
+    def apply_singlesite(self, TimeOp, i):
         """ Applies a single-site operator to site i """
         theta = self.contract(i,i)
         theta_prime = np.tensordot(theta, TimeOp, axes=(2,1)) #(chi, chi, d)
@@ -177,14 +177,14 @@ class MPS:
         
         if Diss_bool:
             for i in range(len(Diss_arr["index"])):
-                self.apply_singlesite(Diss_arr["TimeOp"][i], Diss_arr["index"][i], normalize)
+                self.apply_singlesite(Diss_arr["TimeOp"][i], Diss_arr["index"][i])
         return
         
     def expval(self, Op, site):
         """ Calculates the expectation value of an operator Op for a single site """
         if self.is_density:     #In case of density matrices we must take the trace  
             Gamma_temp = self.Gamma_mat[site].copy()
-            self.apply_singlesite(Op, site, False)
+            self.apply_singlesite(Op, site)
             result = self.calculate_vidal_inner(NORM_state)
             self.Gamma_mat[site] = Gamma_temp
             return result
