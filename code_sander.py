@@ -275,7 +275,7 @@ class MPS:
             if self.is_density:
                 for i in range(self.N):
                     Sz_expvals[i,t] = self.expval(np.kron(Sz, np.eye(d)), i)
-                #Sz_expvals[:,t] *= 1/self.trace[t]
+                Sz_expvals[:,t] *= 1/self.trace[t]
             else:
                 for i in range(self.N):
                     Sz_expvals[i,t] = self.expval(Sz, i)
