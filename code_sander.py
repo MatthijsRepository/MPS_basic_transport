@@ -119,8 +119,6 @@ class MPS:
         """ Applies a single-site operator to site i """
         theta = self.contract(i,i)
         theta_prime = np.tensordot(theta, TimeOp, axes=(2,1)) #(chi, chi, d)
-        if normalize:
-            theta_prime = theta_prime / np.linalg.norm(theta_prime)
         
         inv_lambdas  = self.Lambda_mat[i].copy()
         inv_lambdas[np.nonzero(inv_lambdas)] = inv_lambdas[np.nonzero(inv_lambdas)]**(-1)
